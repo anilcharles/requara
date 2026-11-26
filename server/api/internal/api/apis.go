@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anilcharles/speklo/server/api/internal/jobs"
+	"github.com/anilcharles/speklo/server/api/internal/spec"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/anilcharles/speklo/server/api/internal/jobs"
-	"github.com/anilcharles/speklo/server/api/internal/spec"
 	"gopkg.in/yaml.v3"
 )
 
