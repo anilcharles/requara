@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/anilcharles/speklo/server/api/internal/bao"
+	"github.com/anilcharles/speklo/server/api/internal/spec"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/anilcharles/speklo/server/api/internal/bao"
-	"github.com/anilcharles/speklo/server/api/internal/spec"
 )
 
 //go:embed specs/payments.yaml

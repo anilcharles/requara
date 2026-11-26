@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/anilcharles/speklo/server/api/internal/auth"
 	"github.com/anilcharles/speklo/server/api/internal/jobs"
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 )
 
 // ----- sign-in -----
