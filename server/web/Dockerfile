@@ -13,7 +13,7 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 # Where the API container answers. Override for Kubernetes or a different name.
 ENV SPEKLO_API_UPSTREAM=http://api:8080
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
