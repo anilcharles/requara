@@ -1,6 +1,6 @@
 import { CheckCircleFilled, CloseCircleFilled, CopyOutlined, LoadingOutlined } from "@ant-design/icons";
 import { Alert, App, Button, Divider, Empty, Skeleton, Space, Tabs, theme, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SendResult } from "../../api";
 import { mono, StatusTag } from "../../components/bits";
 import CodeEditor from "../../components/CodeEditor";
@@ -20,6 +20,12 @@ export default function ResponsePane({ result, sending, onCancel, onSaveExample 
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const [tab, setTab] = useState("body");
+  const events = result?.events ?? [];
+  // A stream opens on its events.
+  useEffect(() => {
+    if (result?.events?.length) setTab("events");
+    else setTab((t) => (t === "events" ? "body" : t));
+  }, [result]);
   const body = useMemo(() => (result ? prettyBody(result.body) : null), [result]);
   const tests = result?.tests ?? [];
   const passed = tests.filter((t) => t.pass).length;
@@ -74,6 +80,24 @@ export default function ResponsePane({ result, sending, onCancel, onSaveExample 
     ) : (
       <div style={{ height: "100%", borderRadius: 8, overflow: "hidden", border: `1px solid ${token.colorSplit}` }}>
         <CodeEditor value={body!.text} language={body!.language} readOnly background={token.colorFillQuaternary} />
+      </div>
+    );
+  } else if (tab === "events") {
+    const ended = { closed: "The server closed the stream.", timeout: "Stopped at the request timeout (Settings → Request timeout).", limit: "Stopped at the size or event limit." }[result.streamEnded ?? "closed"];
+    content = (
+      <div style={{ fontSize: 13 }}>
+        <Typography.Text type="secondary">
+          {events.length} event{events.length === 1 ? "" : "s"}. {ended}
+        </Typography.Text>
+        <div style={{ marginTop: 8, border: `1px solid ${token.colorSplit}`, borderRadius: 8 }}>
+          {events.map((e, i) => (
+            <div key={i} style={{ display: "flex", gap: 12, padding: "6px 12px", borderTop: i ? `1px solid ${token.colorSplit}` : undefined, alignItems: "baseline" }}>
+              <span style={{ width: 70, flexShrink: 0, color: token.colorTextSecondary, fontVariantNumeric: "tabular-nums" }}>{Math.round(e.atMs)} ms</span>
+              <span style={{ width: 110, flexShrink: 0, color: token.colorPrimary, overflow: "hidden", textOverflow: "ellipsis" }}>{e.event || "message"}{e.id ? ` #${e.id}` : ""}</span>
+              <pre style={{ ...mono, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", flex: 1 }}>{prettyData(e.data)}</pre>
+            </div>
+          ))}
+        </div>
       </div>
     );
   } else if (tab === "headers") {
@@ -170,6 +194,7 @@ export default function ResponsePane({ result, sending, onCancel, onSaveExample 
         tabBarExtraContent={meta}
         items={[
           { key: "body", label: "Response" },
+          ...(events.length ? [{ key: "events", label: <span>Events <Typography.Text type="secondary" style={{ fontSize: 12 }}>{events.length}</Typography.Text></span> }] : []),
           { key: "headers", label: <span>Headers {result && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{result.headers.length}</Typography.Text>}</span> },
           {
             key: "tests",
@@ -193,4 +218,15 @@ export default function ResponsePane({ result, sending, onCancel, onSaveExample 
       <div style={{ flex: 1, minHeight: 0, overflow: tab === "body" ? "hidden" : "auto", paddingTop: 4 }}>{content}</div>
     </div>
   );
+}
+
+/** An event's data, indented when it's JSON. */
+function prettyData(d: string): string {
+  const t = d.trim();
+  if (!t.startsWith("{") && !t.startsWith("[")) return d;
+  try {
+    return JSON.stringify(JSON.parse(t), null, 2);
+  } catch {
+    return d;
+  }
 }

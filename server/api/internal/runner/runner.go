@@ -161,8 +161,10 @@ type Result struct {
 	Error       string               `json:"error,omitempty"`
 	URL         string               `json:"url"` // secrets redacted
 	Method      string               `json:"method"`
-	Cookies     []Cookie             `json:"cookies,omitempty"` // Set-Cookie the response sent
-	EnvChanges  map[string]string    `json:"-"`                 // variables scripts set; caller persists them
+	Cookies     []Cookie             `json:"cookies,omitempty"`     // Set-Cookie the response sent
+	Events      []SSEEvent           `json:"events,omitempty"`      // text/event-stream responses
+	StreamEnded string               `json:"streamEnded,omitempty"` // closed | timeout | limit
+	EnvChanges  map[string]string    `json:"-"`                     // variables scripts set; caller persists them
 	// With Spec.Scopes: what pm.globals and pm.collectionVariables set
 	// (EnvChanges is then pm.environment's only).
 	GlobalChanges     map[string]string `json:"-"`
@@ -486,13 +488,20 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 		return res
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	var body []byte
+	if isEventStream(resp.Header.Get("Content-Type")) {
+		// A stream: keep its events; the timeout ends it, as a stop, not a failure.
+		body, res.Events, res.StreamEnded, err = readEvents(ctx, resp.Body, t.start)
+		res.Truncated = res.StreamEnded == "limit"
+	} else {
+		body, err = io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+		if len(body) > maxBody {
+			body, res.Truncated = body[:maxBody], true
+		}
+	}
 	end := time.Now()
 	if err != nil {
 		res.Error = "Reading the response failed: " + err.Error()
-	}
-	if len(body) > maxBody {
-		body, res.Truncated = body[:maxBody], true
 	}
 	res.Status, res.StatusText = resp.StatusCode, http.StatusText(resp.StatusCode)
 	res.Cookies = responseCookies(resp)

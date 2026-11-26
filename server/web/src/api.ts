@@ -323,7 +323,10 @@ export type SendResult = {
   url: string;
   method: string;
   cookies?: Cookie[];
+  events?: SSEEvent[]; // text/event-stream responses
+  streamEnded?: "closed" | "timeout" | "limit";
 };
+export type SSEEvent = { id?: string; event?: string; data: string; retry?: number; atMs: number };
 
 export type Environment = { id: string; name: string; color: string; isGlobal: boolean; count: number };
 export type Variable = { id?: string; key: string; value: string; kind: "default" | "secret" | "script"; enabled: boolean; hasValue?: boolean };
