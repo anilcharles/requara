@@ -7,6 +7,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -196,7 +197,8 @@ func (s *Server) deleteCollection(w http.ResponseWriter, r *http.Request) {
 
 // ----- import / export -----
 
-// importCollection takes {format: "postman" | "curl", data, collectionId?}.
+// importCollection takes {format: "postman" | "files" | "curl", data, collectionId?}
+// ("files": a base64 zip from Export as files).
 // A Postman collection becomes a new collection; a cURL command becomes a
 // request in collectionId (or Scratch).
 func (s *Server) importCollection(w http.ResponseWriter, r *http.Request) {
@@ -244,8 +246,17 @@ func (s *Server) importCollection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{"requestId": id, "name": req.Name})
-	case "postman", "":
-		c, err := core.ParsePostman([]byte(in.Data))
+	case "postman", "", "files":
+		var c *core.Collection
+		var err error
+		if in.Format == "files" {
+			var zipped []byte
+			if zipped, err = base64.StdEncoding.DecodeString(in.Data); err == nil {
+				c, err = core.ParseFiles(zipped)
+			}
+		} else {
+			c, err = core.ParsePostman([]byte(in.Data))
+		}
 		if err != nil {
 			httpError(w, http.StatusBadRequest, err.Error())
 			return
@@ -257,7 +268,7 @@ func (s *Server) importCollection(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": c.Name, "requests": len(c.Requests)})
 	default:
-		httpError(w, http.StatusBadRequest, "format is postman or curl")
+		httpError(w, http.StatusBadRequest, "format is postman, files or curl")
 	}
 }
 
@@ -358,6 +369,17 @@ func (s *Server) exportCollection(w http.ResponseWriter, r *http.Request) {
 		}
 		erows.Close()
 		c.Requests = append(c.Requests, req)
+	}
+	if r.URL.Query().Get("format") == "files" {
+		out, err := core.ExportFiles(c)
+		if err != nil {
+			serverError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+core.Slug(c.Name)+`.zip"`)
+		_, _ = w.Write(out)
+		return
 	}
 	out, err := core.ExportPostman(c)
 	if err != nil {

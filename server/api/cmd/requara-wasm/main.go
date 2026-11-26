@@ -53,6 +53,8 @@ var ops = map[string]handler{
 	"parseCurl":       parseCurl,
 	"oauth2Authorize": oauth2Authorize,
 	"oauth2Token":     oauth2Token,
+	"exportFiles":     exportFiles,
+	"parseFiles":      parseFiles,
 }
 
 func main() {
@@ -508,6 +510,27 @@ func oauth2Token(ctx context.Context, in json.RawMessage) (any, error) {
 	}
 	r := &runner.Runner{Transport: transport{mocks: map[string]localMock{}, calls: &[]mockCall{}, agent: x.Agent}}
 	return r.ExchangeCode(ctx, x.Auth, x.Vars, x.Code, x.CodeVerifier, x.RedirectURI)
+}
+
+func exportFiles(_ context.Context, in json.RawMessage) (any, error) {
+	c, err := decode[core.Collection](in)
+	if err != nil {
+		return nil, err
+	}
+	out, err := core.ExportFiles(c)
+	return map[string]string{"data": base64.StdEncoding.EncodeToString(out)}, err
+}
+
+func parseFiles(_ context.Context, in json.RawMessage) (any, error) {
+	x, err := decode[struct{ Data string }](in)
+	if err != nil {
+		return nil, err
+	}
+	zipped, err := base64.StdEncoding.DecodeString(x.Data)
+	if err != nil {
+		return nil, errors.New("that isn't a zip file")
+	}
+	return core.ParseFiles(zipped)
 }
 
 func parsePostman(_ context.Context, in json.RawMessage) (any, error) {

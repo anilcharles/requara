@@ -128,6 +128,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
       { key: "run", label: "Run collection" },
       ...(c.kind !== "scratch" ? [{ key: "settings", label: "Variables, auth and scripts" }] : []),
       { key: "export", label: "Export (Postman v2.1)" },
+      { key: "export-files", label: "Export as files (YAML, for Git)" },
       ...(c.kind === "collection"
         ? [{ type: "divider" as const }, { key: "rename", label: "Rename" }, { key: "delete", label: "Delete", danger: true }]
         : []),
@@ -141,6 +142,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
       if (key === "run") nav(`/runner/${c.id}`);
       if (key === "settings") nav(`/collections/${c.id}`);
       if (key === "export") downloadCollection(c.id);
+      if (key === "export-files") downloadCollection(c.id, "files");
       if (key === "rename") setRenaming(c);
       if (key === "delete") deleteCollection(c);
     },

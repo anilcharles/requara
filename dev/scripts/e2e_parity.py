@@ -188,4 +188,18 @@ assert ckeys.get("seen") == "yes" and "seen" not in ekeys, ckeys
 assert ekeys.get("orderId") == "o-42" and ekeys.get("status") == "200", ekeys
 assert "tok" not in ekeys and "tok" not in gkeys and "tok" not in ckeys, "pm.variables.set is for this send only"
 ok("globals, collection and environment changes saved where each lives; local ones not kept")
+print("export as files (for Git) and import them back")
+st, h, zipped = b.raw("GET", f"{BACKEND}/api/collections/{col['id']}/export?format=files", headers={"X-Requested-With": "requara", **H})
+assert st == 200 and h["Content-Type"] == "application/zip" and "parity.zip" in h["Content-Disposition"], (st, h)
+import io, zipfile
+names = sorted(zipfile.ZipFile(io.BytesIO(zipped)).namelist())
+assert names[0] == "parity/001-me.yaml" and "parity/collection.yaml" in names and len(names) == 5, names
+me = zipfile.ZipFile(io.BytesIO(zipped)).read("parity/001-me.yaml").decode()
+assert "refreshToken" not in me and ts["accessToken"] not in me, me
+ok(f"zip of {len(names)} YAML files; signed-in tokens left out")
+_, imp = api("POST", "/api/collections/import", {"format": "files", "data": base64.b64encode(zipped).decode()}, expect=201)
+assert imp["name"] == "Parity" and imp["requests"] == 4, imp
+_, cs2 = api("GET", f"/api/collections/{imp['id']}/settings", expect=200)
+assert {v["key"] for v in cs2["variables"]} >= {"fake", "cid", "who", "seen"}, cs2
+ok("imported back as a new collection with its variables")
 print("all parity checks passed")

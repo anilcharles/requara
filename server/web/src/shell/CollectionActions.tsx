@@ -7,15 +7,21 @@ import { del, patch, personalActive, post, type Collection, type RequestDoc } fr
 import { exportCollection } from "../personal/backend";
 
 /** Downloads a collection as a Postman Collection v2.1 file. */
-export async function downloadCollection(id: string) {
+/** Downloads a collection as a Postman v2.1 file, or as a zip of YAML files for Git. */
+export async function downloadCollection(id: string, format: "postman" | "files" = "postman") {
   if (!personalActive()) {
-    location.assign(`/api/collections/${id}/export`);
+    location.assign(`/api/collections/${id}/export${format === "files" ? "?format=files" : ""}`);
     return;
   }
-  const f = await exportCollection(id);
+  const f = await exportCollection(id, format);
+  const slug = f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled";
+  const blob =
+    format === "files"
+      ? new Blob([Uint8Array.from(atob(f.text), (ch) => ch.charCodeAt(0))], { type: "application/zip" })
+      : new Blob([f.text], { type: "application/json" });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([f.text], { type: "application/json" }));
-  a.download = `${f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.postman_collection.json`;
+  a.href = URL.createObjectURL(blob);
+  a.download = format === "files" ? `${slug}.zip` : `${slug}.postman_collection.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -102,12 +108,18 @@ export function ImportModal({ open, onClose, collectionId }: { open: boolean; on
   const nav = useNavigate();
   const [kind, setKind] = useState<"postman" | "curl">("postman");
   const [text, setText] = useState("");
+  const [zip, setZip] = useState<{ name: string; data: string } | null>(null); // Export as files, base64
   const [err, setErr] = useState("");
   const run = useMutation({
-    mutationFn: () => post<{ id?: string; requestId?: string; name: string; requests?: number }>("/api/collections/import", { format: kind, data: text, collectionId }),
+    mutationFn: () =>
+      post<{ id?: string; requestId?: string; name: string; requests?: number }>(
+        "/api/collections/import",
+        kind === "postman" && zip ? { format: "files", data: zip.data } : { format: kind, data: text, collectionId },
+      ),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["collections"] });
       setText("");
+      setZip(null);
       setErr("");
       onClose();
       if (r.requestId) nav(`/requests/${r.requestId}`);
@@ -119,7 +131,7 @@ export function ImportModal({ open, onClose, collectionId }: { open: boolean; on
     onError: (e: Error) => setErr(e.message),
   });
   return (
-    <Modal title="Import" open={open} onCancel={onClose} okText="Import" width={620} okButtonProps={{ disabled: !text.trim() }} confirmLoading={run.isPending} onOk={() => run.mutate()} destroyOnHidden>
+    <Modal title="Import" open={open} onCancel={onClose} okText="Import" width={620} okButtonProps={{ disabled: !text.trim() && !zip }} confirmLoading={run.isPending} onOk={() => run.mutate()} destroyOnHidden>
       <Segmented
         value={kind}
         onChange={(v) => (setKind(v as "postman" | "curl"), setErr(""))}
@@ -132,18 +144,28 @@ export function ImportModal({ open, onClose, collectionId }: { open: boolean; on
       {kind === "postman" ? (
         <>
           <Upload.Dragger
-            accept=".json,application/json"
+            accept=".json,application/json,.zip,application/zip"
             showUploadList={false}
             beforeUpload={(f) => {
-              f.text().then(setText);
+              if (f.name.toLowerCase().endsWith(".zip")) {
+                f.arrayBuffer().then((b) => {
+                  let bin = "";
+                  new Uint8Array(b).forEach((x) => (bin += String.fromCharCode(x)));
+                  setZip({ name: f.name, data: btoa(bin) });
+                  setText("");
+                });
+              } else {
+                setZip(null);
+                f.text().then(setText);
+              }
               return false;
             }}
           >
             <p className="ant-upload-drag-icon">
               <InboxOutlined />
             </p>
-            <p className="ant-upload-text">Drop a Postman collection (v2.0 or v2.1) here, or click to choose it</p>
-            <p className="ant-upload-hint">In Postman: ··· on the collection → Export → Collection v2.1</p>
+            <p className="ant-upload-text">{zip ? zip.name : "Drop a Postman collection (v2.0 or v2.1) or a Requara files .zip here, or click to choose it"}</p>
+            <p className="ant-upload-hint">In Postman: ··· on the collection → Export → Collection v2.1. A Git folder from Export as files: zip it first.</p>
           </Upload.Dragger>
           <Input.TextArea rows={5} style={{ marginTop: 12, fontFamily: "JetBrains Mono, monospace", fontSize: 12 }} placeholder="…or paste the collection JSON" value={text} onChange={(e) => setText(e.target.value)} />
         </>

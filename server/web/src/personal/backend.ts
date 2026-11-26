@@ -746,7 +746,7 @@ const routes: Route[] = [
         const row = saveImported(col, { ...r, folder: folder || (col ? "" : "Scratch") }, 1000);
         return { requestId: row.id, name: row.name };
       }
-      const pc = await core<any>("parsePostman", { data });
+      const pc = await core<any>(format === "files" ? "parseFiles" : "parsePostman", { data });
       const sort = db.all<CollectionRow>("collections").reduce((m, x) => Math.max(m, x.sort + 1), 0);
       const col = db.put<CollectionRow>("collections", { id: newId(), apiId: null, name: pc.name, description: pc.description, variables: pc.variables ?? [], auth: pc.auth, preScript: pc.preScript, postScript: pc.postScript, sort, createdAt: now() });
       (pc.requests ?? []).forEach((r: any, i: number) => saveImported(col.id, r, i));
@@ -1056,8 +1056,9 @@ export async function snapshot() {
   };
 }
 
-/** A personal collection as a Postman Collection v2.1 (JSON text). */
-export async function exportCollection(id: string): Promise<{ name: string; text: string }> {
+/** A personal collection as a Postman Collection v2.1 (JSON text), or with
+ * format "files" as a zip of YAML files (base64 in text). */
+export async function exportCollection(id: string, format: "postman" | "files" = "postman"): Promise<{ name: string; text: string }> {
   await init();
   const s = id === "scratch" ? undefined : (settingsFor(id) ?? fail(404, "Collection not found"));
   const requests = collectionRequestIds(id).map((rid) => {
@@ -1069,6 +1070,7 @@ export async function exportCollection(id: string): Promise<{ name: string; text
     };
   });
   const c = { name: s?.name ?? "Scratch", description: s?.description ?? "", variables: s?.variables ?? [], auth: s?.auth ?? { type: "inherit" }, preScript: s?.preScript ?? "", postScript: s?.postScript ?? "", requests };
+  if (format === "files") return { name: c.name, text: (await core<{ data: string }>("exportFiles", c)).data };
   const { text } = await core<{ text: string }>("exportPostman", c);
   return { name: c.name, text };
 }
