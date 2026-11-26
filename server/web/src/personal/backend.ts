@@ -224,11 +224,14 @@ function resolveEnv(envId: string, collectionVars: KV[] = []) {
     .filter((v) => ids.has(v.envId) && v.enabled)
     .sort((a, b) => Number(envs.find((e) => e.id === b.envId)?.isGlobal) - Number(envs.find((e) => e.id === a.envId)?.isGlobal) || a.sort - b.sort);
   const globalIds = new Set(envs.filter((e) => e.isGlobal).map((e) => e.id));
-  for (const v of rows.filter((r) => globalIds.has(r.envId))) vars[v.key] = v.value;
-  for (const v of collectionVars) if (v.enabled && v.key) vars[v.key] = v.value;
-  for (const v of rows.filter((r) => !globalIds.has(r.envId))) vars[v.key] = v.value;
+  // Each scope apart too, for scripts' pm.globals, pm.collectionVariables, pm.environment.
+  const scopes = { globals: {} as Record<string, string>, collection: {} as Record<string, string>, environment: {} as Record<string, string>, data: {} as Record<string, string> };
+  for (const v of rows.filter((r) => globalIds.has(r.envId))) vars[v.key] = scopes.globals[v.key] = v.value;
+  for (const v of collectionVars) if (v.enabled && v.key) vars[v.key] = scopes.collection[v.key] = v.value;
+  for (const v of rows.filter((r) => !globalIds.has(r.envId))) vars[v.key] = scopes.environment[v.key] = v.value;
   for (const v of rows) if (v.kind === "secret" && v.value) secrets.push(v.value);
-  return { env: chosen, vars, secrets };
+  const globalEnv = envs.filter((e) => e.isGlobal).sort((a, b) => a.sort - b.sort)[0];
+  return { env: chosen, globalEnv, vars, secrets, scopes };
 }
 
 function mockSpecs() {
@@ -637,8 +640,9 @@ const routes: Route[] = [
       let d: any = toRequestDoc(row);
       if (c.body?.draft) d = { ...c.body.draft, id: d.id, apiId: d.apiId, collectionId: d.collectionId };
       const inh = inheritFor(row);
-      const { env, vars, secrets } = resolveEnv(c.body?.environmentId ?? "", inh.vars);
+      const { env, globalEnv, vars, secrets, scopes } = resolveEnv(c.body?.environmentId ?? "", inh.vars);
       Object.assign(vars, c.body?.data ?? {});
+      Object.assign(scopes.data, c.body?.data ?? {});
       let auth = d.auth;
       if (!auth?.type || auth.type === "inherit") auth = inh.auth;
       if (!auth?.type || auth.type === "inherit") auth = "secret_key" in vars ? { type: "bearer", token: "{{secret_key}}" } : { type: "none" };
@@ -649,6 +653,7 @@ const routes: Route[] = [
           method: d.method, url: d.url, params: nonNil(d.params), headers: nonNil(d.headers), bodyMode: d.bodyMode, body: d.body,
           formData: d.formData ?? [], bodyFile: d.bodyFile ?? null, cookies: cookieRows(),
           auth, preScript: joinScripts(inh.pre, d.preScript), postScript: joinScripts(inh.post, d.postScript), settings,
+          scopes, info: { requestName: d.name ?? "", requestId: d.id ?? "", iteration: 0 },
         },
         vars,
         secrets,
@@ -661,15 +666,41 @@ const routes: Route[] = [
         res.error +=
           " My workspace sends from this browser, so APIs that don't allow other websites (CORS) can't be reached. Run the Requara agent on your computer and pair it in Preferences, or use a team workspace on your organization's server.";
       }
-      // Variables the scripts set go into the environment.
-      if (env) {
-        const existing = db.all<VarRow>("variables").filter((v) => v.envId === env.id);
-        for (const [k, v] of Object.entries<string>(out.envChanges ?? {})) {
+      // Variables the scripts set go where their scope lives: globals in the
+      // globals environment, collection variables in the collection.
+      const saveVars = (envId: string, changes: Record<string, string>) => {
+        const existing = db.all<VarRow>("variables").filter((v) => v.envId === envId);
+        for (const [k, v] of Object.entries<string>(changes)) {
           const row = existing.find((x) => x.key === k);
           if (row) db.put<VarRow>("variables", { ...row, value: v });
-          else db.put<VarRow>("variables", { id: newId(), envId: env.id, key: k, value: v, kind: "script", enabled: true, sort: 1000 });
+          else db.put<VarRow>("variables", { id: newId(), envId, key: k, value: v, kind: "script", enabled: true, sort: 1000 });
         }
+      };
+      let envChanges: Record<string, string> = { ...(out.envChanges ?? {}) };
+      const globalChanges: Record<string, string> = out.globalChanges ?? {};
+      const collectionChanges: Record<string, string> = out.collectionChanges ?? {};
+      if (Object.keys(globalChanges).length) {
+        if (globalEnv) saveVars(globalEnv.id, globalChanges);
+        else envChanges = { ...envChanges, ...globalChanges };
       }
+      const collId = row.collectionId ?? row.apiId;
+      const coll = collId ? settingsFor(collId) : undefined;
+      if (Object.keys(collectionChanges).length) {
+        if (coll && collId) {
+          const variables = [...(coll.variables ?? [])];
+          for (const [k, v] of Object.entries(collectionChanges)) {
+            const i = variables.findIndex((x) => x.key === k);
+            if (i >= 0) variables[i] = { ...variables[i], value: v };
+            else variables.push({ key: k, value: v, enabled: true });
+          }
+          // An API's settings row may not exist yet (like PUT .../settings).
+          const existing = db.get<CollectionRow>("collections", collId) ?? db.all<CollectionRow>("collections").find((x) => x.apiId === collId);
+          const { kind, ...base } = coll;
+          void kind;
+          db.put<CollectionRow>("collections", { ...base, id: existing?.id ?? newId(), apiId: coll.kind === "api" ? coll.id : null, variables });
+        } else envChanges = { ...envChanges, ...collectionChanges };
+      }
+      if (env) saveVars(env.id, envChanges);
       recordMockCalls(out.mockCalls ?? []);
       const stored = prefs().saveResponses === false ? { ...res, body: "" } : res;
       const h = db.put<HistoryRow>("history", { id: newId(), requestId: d.id, apiId: d.apiId ?? null, envName: env?.name ?? "", createdAt: now(), result: stored });

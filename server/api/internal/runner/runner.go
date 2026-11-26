@@ -132,6 +132,10 @@ type Spec struct {
 	PreScript  string      `json:"preScript"`
 	PostScript string      `json:"postScript"`
 	Settings   Settings    `json:"settings"`
+	// Scopes keeps Postman's variable scopes apart for scripts; vars passed
+	// to Send must then be what they resolve to. Nil: one set of variables.
+	Scopes *sandbox.Scopes `json:"scopes,omitempty"`
+	Info   sandbox.Info    `json:"info"`
 }
 
 type Phase struct {
@@ -159,6 +163,10 @@ type Result struct {
 	Method      string               `json:"method"`
 	Cookies     []Cookie             `json:"cookies,omitempty"` // Set-Cookie the response sent
 	EnvChanges  map[string]string    `json:"-"`                 // variables scripts set; caller persists them
+	// With Spec.Scopes: what pm.globals and pm.collectionVariables set
+	// (EnvChanges is then pm.environment's only).
+	GlobalChanges     map[string]string `json:"-"`
+	CollectionChanges map[string]string `json:"-"`
 }
 
 type Runner struct {
@@ -200,8 +208,83 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 	res := &Result{Method: strings.ToUpper(s.Method)}
 	redact := redactor(secretValues)
 
-	// 1. Build the request with variables filled in.
-	req := sandbox.Request{Method: strings.ToUpper(s.Method), URL: Substitute(s.URL, vars), Headers: map[string]string{}}
+	// 1. The request as written: like Postman, the pre-request script sees
+	// {{variables}} unfilled, and what it sets is used to fill them.
+	req := sandbox.Request{Method: strings.ToUpper(s.Method), URL: s.URL, Headers: map[string]string{}}
+	for _, h := range s.Headers {
+		if h.Enabled && h.Key != "" {
+			req.Headers[h.Key] = h.Value
+		}
+	}
+	if s.BodyMode != "none" && s.BodyMode != "" {
+		req.Body = s.Body
+	}
+	scopes := cloneScopes(s.Scopes)
+	envOut, globalsOut, collectionOut := map[string]string{}, map[string]string{}, map[string]string{}
+	keep := func(out *sandbox.Output) {
+		for k, v := range out.Env {
+			envOut[k] = v
+		}
+		for k, v := range out.Globals {
+			globalsOut[k] = v
+		}
+		for k, v := range out.Collection {
+			collectionOut[k] = v
+		}
+		if scopes == nil {
+			// One set of variables: whatever scope a script set, it's that.
+			for _, m := range []map[string]string{out.Globals, out.Collection, out.Env, out.Local} {
+				for k, v := range m {
+					vars[k] = v
+				}
+			}
+			return
+		}
+		for k, v := range out.Globals {
+			scopes.Globals[k] = v
+		}
+		for k, v := range out.Collection {
+			scopes.Collection[k] = v
+		}
+		for k, v := range out.Env {
+			scopes.Environment[k] = v
+		}
+		for k, v := range out.Local {
+			scopes.Data[k] = v // local outranks data for the rest of this send
+		}
+		for k, v := range ResolveScopes(scopes) {
+			vars[k] = v
+		}
+	}
+	sendSub := r.subRequestSender()
+
+	// 2. Pre-request script may change the request and set variables.
+	if strings.TrimSpace(s.PreScript) != "" {
+		out, err := sandbox.RunWith(ctx, s.PreScript, sandbox.Input{Request: req, Env: vars, Scopes: scopes, Info: s.Info}, sendSub)
+		if err != nil {
+			res.Error = "Pre-request script failed: " + err.Error()
+			return res
+		}
+		if out.Error != "" {
+			res.ScriptError = "Pre-request: " + out.Error
+		}
+		req = out.Request
+		if req.Headers == nil {
+			req.Headers = map[string]string{}
+		}
+		keep(out)
+		res.Logs = append(res.Logs, out.Logs...)
+	}
+
+	// 3. Fill in variables.
+	req.Method = strings.ToUpper(req.Method)
+	req.URL = Substitute(req.URL, vars)
+	filled := map[string]string{}
+	for k, v := range req.Headers {
+		filled[Substitute(k, vars)] = Substitute(v, vars)
+	}
+	req.Headers = filled
+	req.Body = Substitute(req.Body, vars)
 	u, err := url.Parse(req.URL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		res.URL = redact(req.URL)
@@ -214,11 +297,6 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 			q.Add(Substitute(p.Key, vars), Substitute(p.Value, vars))
 		}
 	}
-	for _, h := range s.Headers {
-		if h.Enabled && h.Key != "" {
-			req.Headers[Substitute(h.Key, vars)] = Substitute(h.Value, vars)
-		}
-	}
 	if s.Settings.encode() {
 		u.RawQuery = q.Encode()
 	} else {
@@ -226,36 +304,16 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 	}
 	req.URL = u.String()
 	if s.BodyMode != "none" && s.BodyMode != "" {
-		req.Body = Substitute(s.Body, vars)
 		if _, ok := headerLookup(req.Headers, "Content-Type"); !ok {
 			switch s.BodyMode {
-			case "json":
+			case "json", "graphql":
 				req.Headers["Content-Type"] = "application/json"
 			case "form-urlencoded":
 				req.Headers["Content-Type"] = "application/x-www-form-urlencoded"
-			case "graphql":
-				req.Headers["Content-Type"] = "application/json"
 			}
 		}
 	}
 
-	envOut := map[string]string{}
-	// 2. Pre-request script may change the request and set variables.
-	if strings.TrimSpace(s.PreScript) != "" {
-		out, err := sandbox.Run(ctx, s.PreScript, sandbox.Input{Request: req, Env: vars})
-		if err != nil {
-			res.Error = "Pre-request script failed: " + err.Error()
-			return res
-		}
-		if out.Error != "" {
-			res.ScriptError = "Pre-request: " + out.Error
-		}
-		req = out.Request
-		for k, v := range out.Env {
-			envOut[k], vars[k] = v, v
-		}
-		res.Logs = append(res.Logs, out.Logs...)
-	}
 	// Auth goes on after the pre-request script, like Postman, so scripts
 	// can set the variables it uses (a token, a signature).
 	switch s.Auth.Type {
@@ -455,11 +513,13 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 		for _, h := range res.ResHeaders {
 			hdrs[h.Key] = h.Value
 		}
-		out, err := sandbox.Run(ctx, s.PostScript, sandbox.Input{
+		out, err := sandbox.RunWith(ctx, s.PostScript, sandbox.Input{
 			Request:  req,
 			Response: &sandbox.Response{Status: res.Status, Headers: hdrs, Body: res.Body, Time: res.DurationMs},
 			Env:      vars,
-		})
+			Scopes:   scopes,
+			Info:     s.Info,
+		}, sendSub)
 		if err != nil {
 			res.ScriptError = "Tests: " + err.Error()
 		} else {
@@ -468,13 +528,85 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 			if out.Error != "" {
 				res.ScriptError = "Tests: " + out.Error
 			}
-			for k, v := range out.Env {
+			keep(out)
+		}
+	}
+	if scopes == nil {
+		// One set of variables: every change goes to the environment.
+		for _, m := range []map[string]string{globalsOut, collectionOut} {
+			for k, v := range m {
 				envOut[k] = v
 			}
 		}
+		globalsOut, collectionOut = map[string]string{}, map[string]string{}
 	}
+	res.GlobalChanges, res.CollectionChanges = globalsOut, collectionOut
 	res.EnvChanges = envOut
 	return res
+}
+
+func cloneScopes(sc *sandbox.Scopes) *sandbox.Scopes {
+	if sc == nil {
+		return nil
+	}
+	cp := func(m map[string]string) map[string]string {
+		out := make(map[string]string, len(m))
+		for k, v := range m {
+			out[k] = v
+		}
+		return out
+	}
+	return &sandbox.Scopes{Globals: cp(sc.Globals), Collection: cp(sc.Collection), Environment: cp(sc.Environment), Data: cp(sc.Data)}
+}
+
+// ResolveScopes is the variables a request sees: globals, then the
+// collection's, then the environment's, then the iteration data.
+func ResolveScopes(sc *sandbox.Scopes) map[string]string {
+	out := map[string]string{}
+	if sc == nil {
+		return out
+	}
+	for _, m := range []map[string]string{sc.Globals, sc.Collection, sc.Environment, sc.Data} {
+		for k, v := range m {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// subRequestSender sends scripts' pm.sendRequest calls, with the same
+// network guard and proxy as Requara's own calls.
+func (r *Runner) subRequestSender() sandbox.Sender {
+	return func(ctx context.Context, sr sandbox.SubRequest) sandbox.SubResponse {
+		u, err := url.Parse(sr.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return sandbox.SubResponse{Error: "pm.sendRequest: invalid URL " + sr.URL}
+		}
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		hr, err := http.NewRequestWithContext(ctx, sr.Method, u.String(), bytesReader([]byte(sr.Body)))
+		if err != nil {
+			return sandbox.SubResponse{Error: err.Error()}
+		}
+		for k, v := range sr.Headers {
+			hr.Header.Set(k, v)
+		}
+		if hr.Header.Get("User-Agent") == "" {
+			hr.Header.Set("User-Agent", "Requara/1.0")
+		}
+		start := time.Now()
+		resp, err := (&http.Client{Transport: r.roundTripper(true)}).Do(hr)
+		if err != nil {
+			return sandbox.SubResponse{Error: friendlyErr(err, 20*time.Second)}
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+		h := map[string]string{}
+		for k, vs := range resp.Header {
+			h[strings.ToLower(k)] = strings.Join(vs, ", ")
+		}
+		return sandbox.SubResponse{Status: resp.StatusCode, StatusText: http.StatusText(resp.StatusCode), Headers: h, Body: string(body), Time: time.Since(start).Milliseconds()}
+	}
 }
 
 func bytesReader(b []byte) io.Reader {

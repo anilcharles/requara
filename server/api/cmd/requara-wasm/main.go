@@ -478,7 +478,7 @@ func send(ctx context.Context, in json.RawMessage) (any, error) {
 	if res.EnvChanges == nil {
 		res.EnvChanges = map[string]string{}
 	}
-	return map[string]any{"result": res, "envChanges": res.EnvChanges, "mockCalls": calls}, nil
+	return map[string]any{"result": res, "envChanges": res.EnvChanges, "globalChanges": res.GlobalChanges, "collectionChanges": res.CollectionChanges, "mockCalls": calls}, nil
 }
 
 type oauth2In struct {

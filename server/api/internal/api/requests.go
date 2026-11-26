@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/anilcharles/requara/server/api/internal/runner"
+	"github.com/anilcharles/requara/server/api/internal/sandbox"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
@@ -390,6 +391,37 @@ func transitKey(ws string) string { return "ws-" + ws }
 // then the environment's own) and the list of secret values to redact.
 // Secrets that can't be decrypted are left out and named in unreadable.
 func (s *Server) resolveEnv(ctx context.Context, p *Principal, envID string, collectionVars []runner.KV) (id, name string, vars map[string]string, secrets, unreadable []string, err error) {
+	r, err := s.resolveVars(ctx, p, envID, collectionVars)
+	if err != nil {
+		return "", "", nil, nil, nil, err
+	}
+	return r.envID, r.envName, r.vars, r.secrets, r.unreadable, nil
+}
+
+// resolved is what a send's variables are, each scope apart for scripts.
+type resolved struct {
+	envID, envName, globalID string
+	vars                     map[string]string // what they resolve to
+	scopes                   *sandbox.Scopes
+	secrets, unreadable      []string
+}
+
+func (s *Server) resolveVars(ctx context.Context, p *Principal, envID string, collectionVars []runner.KV) (*resolved, error) {
+	id, name, globalID, vars, scopes, secrets, unreadable, err := s.resolveEnvScoped(ctx, p, envID, collectionVars)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved{envID: id, envName: name, globalID: globalID, vars: vars, scopes: scopes, secrets: secrets, unreadable: unreadable}, nil
+}
+
+func (s *Server) resolveEnvScoped(ctx context.Context, p *Principal, envID string, collectionVars []runner.KV) (id, name, globalID string, vars map[string]string, scopes *sandbox.Scopes, secrets, unreadable []string, err error) {
+	scopes = &sandbox.Scopes{Globals: map[string]string{}, Collection: map[string]string{}, Environment: map[string]string{}, Data: map[string]string{}}
+	for _, v := range collectionVars {
+		if v.Enabled && v.Key != "" {
+			scopes.Collection[v.Key] = v.Value
+		}
+	}
+	_ = s.db.QueryRow(ctx, `SELECT id FROM environments WHERE workspace_id=$1 AND is_global ORDER BY sort LIMIT 1`, p.WorkspaceID).Scan(&globalID)
 	if envID == "" {
 		envID, _ = p.Prefs["activeEnvironmentId"].(string)
 	}
@@ -453,6 +485,11 @@ func (s *Server) resolveEnv(ctx context.Context, p *Principal, envID string, col
 		}
 		if !skip[i] {
 			vars[x.key] = x.value
+			if x.global {
+				scopes.Globals[x.key] = x.value
+			} else {
+				scopes.Environment[x.key] = x.value
+			}
 		}
 	}
 	if !collectionDone {
@@ -501,12 +538,14 @@ func (s *Server) sendRequest(w http.ResponseWriter, r *http.Request) {
 // what scripts and cookies changed, and records it in history.
 func (s *Server) sendDoc(ctx context.Context, p *Principal, d *requestDoc, envID string, data map[string]string) (*runner.Result, string, string, error) {
 	inh := s.inheritFor(ctx, p.WorkspaceID, d)
-	envID, envName, vars, secrets, unreadable, err := s.resolveEnv(ctx, p, envID, inh.vars)
+	rv, err := s.resolveVars(ctx, p, envID, inh.vars)
 	if err != nil {
 		return nil, "", "", err
 	}
+	envID, envName, vars, secrets, unreadable := rv.envID, rv.envName, rv.vars, rv.secrets, rv.unreadable
 	for k, v := range data {
 		vars[k] = v
+		rv.scopes.Data[k] = v
 	}
 	auth := d.Auth
 	if auth.Type == "inherit" || auth.Type == "" {
@@ -527,13 +566,43 @@ func (s *Server) sendDoc(ctx context.Context, p *Principal, d *requestDoc, envID
 		Method: d.Method, URL: d.URL, Params: d.Params, Headers: d.Headers, BodyMode: d.BodyMode, Body: d.Body,
 		FormData: d.FormData, BodyFile: d.BodyFile, Cookies: s.loadCookies(ctx, p),
 		Auth: auth, PreScript: joinScripts(inh.pre, d.PreScript), PostScript: joinScripts(inh.post, d.PostScript), Settings: d.Settings,
+		Scopes: rv.scopes, Info: sandbox.Info{RequestName: d.Name, RequestID: d.ID},
 	}, vars, secrets)
 	if len(res.Cookies) > 0 && p.UserID != "" {
 		s.saveCookies(ctx, p, res.Cookies)
 	}
-	if len(res.EnvChanges) > 0 && envID != "" && p.CanEdit() {
-		if err := s.applyScriptVars(ctx, p, envID, res.EnvChanges); err != nil {
-			res.ScriptError = strings.TrimSpace(res.ScriptError + " (couldn't save variables: " + err.Error() + ")")
+	if p.CanEdit() {
+		// Each scope's changes go where that scope lives. Without a
+		// collection or a globals environment, they go to the environment.
+		envChanges := res.EnvChanges
+		collectionID := ""
+		if d.CollectionID != nil {
+			collectionID = *d.CollectionID
+		} else if d.APIID != nil {
+			collectionID = *d.APIID
+		}
+		var errs []string
+		if len(res.CollectionChanges) > 0 {
+			if collectionID == "" {
+				envChanges = merged(envChanges, res.CollectionChanges)
+			} else if err := s.applyCollectionVars(ctx, p, collectionID, res.CollectionChanges); err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+		if len(res.GlobalChanges) > 0 {
+			if rv.globalID == "" {
+				envChanges = merged(envChanges, res.GlobalChanges)
+			} else if err := s.applyScriptVars(ctx, p, rv.globalID, res.GlobalChanges); err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+		if len(envChanges) > 0 && envID != "" {
+			if err := s.applyScriptVars(ctx, p, envID, envChanges); err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+		if len(errs) > 0 {
+			res.ScriptError = strings.TrimSpace(res.ScriptError + " (couldn't save variables: " + strings.Join(errs, "; ") + ")")
 		}
 	}
 	if len(unreadable) > 0 {
@@ -545,6 +614,54 @@ func (s *Server) sendDoc(ctx context.Context, p *Principal, d *requestDoc, envID
 		return nil, "", "", err
 	}
 	return res, envName, historyID, nil
+}
+
+func merged(a, b map[string]string) map[string]string {
+	out := make(map[string]string, len(a)+len(b))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+// applyCollectionVars stores pm.collectionVariables changes in the
+// collection's (or API's) variables.
+func (s *Server) applyCollectionVars(ctx context.Context, p *Principal, id string, changes map[string]string) error {
+	c, err := s.loadSettings(ctx, p.WorkspaceID, id)
+	if err != nil {
+		return err
+	}
+	keys := make([]string, 0, len(changes))
+	for k := range changes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		found := false
+		for i := range c.Variables {
+			if c.Variables[i].Key == k {
+				c.Variables[i].Value, found = changes[k], true
+			}
+		}
+		if !found {
+			c.Variables = append(c.Variables, runner.KV{Key: k, Value: changes[k], Enabled: true})
+		}
+	}
+	vars, _ := json.Marshal(c.Variables)
+	auth, _ := json.Marshal(c.Auth)
+	if c.Kind == "api" {
+		_, err = s.db.Exec(ctx, `
+			INSERT INTO collections (workspace_id, api_id, name, description, variables, auth, pre_script, post_script)
+			VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (api_id) DO UPDATE SET variables=$5, updated_at=now()`,
+			p.WorkspaceID, c.ID, c.Name, c.Description, vars, auth, c.PreScript, c.PostScript)
+	} else {
+		_, err = s.db.Exec(ctx, `UPDATE collections SET variables=$3, updated_at=now() WHERE workspace_id=$1 AND id::text=$2`, p.WorkspaceID, c.ID, vars)
+	}
+	return err
 }
 
 // applyScriptVars stores variables set by scripts (re-encrypting secrets).
