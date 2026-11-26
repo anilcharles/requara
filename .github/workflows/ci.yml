@@ -1,6 +1,15 @@
 name: CI
 
-# Runs on the self-hosted runner (label "speklo"). Jobs from pull requests
+# Runs on the self-hosted runner (label "speklo"), in dependency order:
+#
+#   Secret scan
+#    ├─ Dependency vulnerabilities
+#    ├─ Server API (Go) ──── Docker image (api)
+#    ├─ Server web UI ────── Docker image (web)
+#    └─ Desktop (macOS)
+#
+# A leaked secret stops everything; an image is only built from code whose
+# checks passed. Jobs from pull requests
 # opened from forks are skipped, so outside code never runs on that machine.
 # (Fork PR workflows are also disabled in the repository's Actions settings.)
 on:
@@ -34,6 +43,7 @@ jobs:
 
   vulnerabilities:
     name: Dependency vulnerabilities
+    needs: secrets
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     steps:
@@ -56,6 +66,7 @@ jobs:
 
   api:
     name: Server API (Go)
+    needs: secrets
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/api } }
@@ -71,6 +82,7 @@ jobs:
 
   web:
     name: Server web UI (React)
+    needs: secrets
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/web } }
@@ -84,27 +96,41 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build # type-checks, then bundles
 
-  images:
-    name: Docker image (${{ matrix.image }})
+  image-api:
+    name: Docker image (api)
+    needs: api
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
-    strategy:
-      matrix:
-        image: [api, web]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: server/${{ matrix.image }}
+          context: server/api
           push: false
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+  image-web:
+    name: Docker image (web)
+    needs: web
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: server/web
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
   # The runner is a Mac, so CI builds the macOS desktop app. Windows and Linux
   # installers are built at release time (release.yml).
   desktop:
     name: Desktop (macOS)
+    needs: secrets
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: desktop } }
