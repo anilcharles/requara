@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
 	"github.com/anilcharles/speklo/server/api/internal/auth"
 	"github.com/anilcharles/speklo/server/api/internal/bao"
 	"github.com/anilcharles/speklo/server/api/internal/config"
 	"github.com/anilcharles/speklo/server/api/internal/events"
 	"github.com/anilcharles/speklo/server/api/internal/runner"
 	"github.com/anilcharles/speklo/server/api/internal/storage"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
 )
 
 type Server struct {

@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/anilcharles/speklo/server/api/internal/sandbox"
+	"github.com/google/uuid"
 )
 
 const maxBody = 10 << 20 // 10 MB read limit
