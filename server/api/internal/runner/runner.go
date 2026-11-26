@@ -207,7 +207,8 @@ func Substitute(s string, vars map[string]string) string {
 // Send runs the full pipeline. vars holds every variable value, including
 // decrypted secrets; secretValues lists the ones to redact from what's stored.
 func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secretValues []string) *Result {
-	res := &Result{Method: strings.ToUpper(s.Method)}
+	// Lists are never nil, so a request that fails early still answers [] for them.
+	res := &Result{Method: strings.ToUpper(s.Method), ReqHeaders: []KV{}, ResHeaders: []KV{}, Timeline: []Phase{}, Tests: []sandbox.TestResult{}, Logs: []string{}}
 	redact := redactor(secretValues)
 
 	// 1. The request as written: like Postman, the pre-request script sees
@@ -532,7 +533,9 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 		if err != nil {
 			res.ScriptError = "Tests: " + err.Error()
 		} else {
-			res.Tests = out.Tests
+			if out.Tests != nil {
+				res.Tests = out.Tests
+			}
 			res.Logs = append(res.Logs, out.Logs...)
 			if out.Error != "" {
 				res.ScriptError = "Tests: " + out.Error
@@ -854,7 +857,7 @@ func (t *tracer) trace() *httptrace.ClientTrace {
 func (t *tracer) phases(end time.Time) []Phase {
 	ms := func(a, b time.Time) float64 { return float64(b.Sub(a).Microseconds()) / 1000 }
 	at := func(a time.Time) float64 { return ms(t.start, a) }
-	var out []Phase
+	out := []Phase{}
 	add := func(name string, a, b time.Time) {
 		if !a.IsZero() && !b.IsZero() && !b.Before(a) {
 			out = append(out, Phase{Name: name, StartMs: at(a), Ms: ms(a, b)})

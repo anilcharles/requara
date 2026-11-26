@@ -2,6 +2,8 @@ import Editor, { loader, type OnMount } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
+import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
+import CssWorker from "monaco-editor/language/css/css.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 import { theme } from "antd";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +14,9 @@ self.MonacoEnvironment = {
   getWorker(_id: string, label: string) {
     if (label === "json") return new JsonWorker();
     if (label === "typescript" || label === "javascript") return new TsWorker();
+    // HTML and XML responses: without their worker Monaco throws on every open.
+    if (label === "html" || label === "handlebars" || label === "razor") return new HtmlWorker();
+    if (label === "css" || label === "scss" || label === "less") return new CssWorker();
     return new EditorWorker();
   },
 };

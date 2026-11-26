@@ -16,7 +16,13 @@ const phaseColors: Record<string, string> = {
   "Content download": "#1677FF",
 };
 
-export default function ResponsePane({ result, sending, onCancel, onSaveExample }: { result: SendResult | null; sending: boolean; onCancel: () => void; onSaveExample?: (r: SendResult) => void }) {
+export default function ResponsePane({ result: raw, sending, onCancel, onSaveExample }: { result: SendResult | null; sending: boolean; onCancel: () => void; onSaveExample?: (r: SendResult) => void }) {
+  // A request that didn't complete (bad URL, unreachable host, CORS) has no
+  // response headers or timeline; older servers and history send null for them.
+  const result = useMemo(
+    () => (raw ? { ...raw, headers: raw.headers ?? [], requestHeaders: raw.requestHeaders ?? [], timeline: raw.timeline ?? [], body: raw.body ?? "" } : null),
+    [raw],
+  );
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const [tab, setTab] = useState("body");

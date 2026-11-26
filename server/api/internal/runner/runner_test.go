@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -62,5 +63,17 @@ func TestBlocksPrivateNetwork(t *testing.T) {
 	res := (&Runner{AllowPrivateNetwork: false}).Send(context.Background(), Spec{Method: "GET", URL: srv.URL}, map[string]string{}, nil)
 	if !strings.Contains(res.Error, "Blocked") {
 		t.Fatalf("expected block, got %q", res.Error)
+	}
+}
+
+// A request that fails early still answers lists, never null: the web app
+// reads their lengths.
+func TestFailedSendHasEmptyLists(t *testing.T) {
+	for _, url := range []string{"api.example.com/x", "{{nope}}/x", "", "http://127.0.0.1:1/x"} {
+		res := (&Runner{AllowPrivateNetwork: true}).Send(context.Background(), Spec{Method: "GET", URL: url}, map[string]string{}, nil)
+		b, _ := json.Marshal(res)
+		if res.Error == "" || strings.Contains(string(b), "null") {
+			t.Errorf("%q: error %q, json %s", url, res.Error, b)
+		}
 	}
 }
