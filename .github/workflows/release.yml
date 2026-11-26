@@ -45,7 +45,7 @@ jobs:
       matrix:
         image: [api, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -83,7 +83,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
       - name: Pin the images and version in the bundle
         env:
@@ -118,7 +118,7 @@ jobs:
       contents: write
     defaults: { run: { working-directory: desktop, shell: bash } }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ needs.release-please.outputs.desktop_tag }}" }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
