@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "include-component-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "packages": {
+    "server": {
+      "component": "server",
+      "package-name": "speklo-server",
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md"
+    },
+    "desktop": {
+      "component": "desktop",
+      "package-name": "speklo-desktop",
+      "release-type": "rust",
+      "changelog-path": "CHANGELOG.md"
+    }
+  }
+}

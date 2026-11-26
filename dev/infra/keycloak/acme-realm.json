@@ -1,0 +1,197 @@
+{
+  "realm": "acme",
+  "displayName": "ACME",
+  "enabled": true,
+  "loginWithEmailAllowed": true,
+  "rememberMe": true,
+  "resetPasswordAllowed": true,
+  "sslRequired": "none",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "roles": {
+    "realm": [
+      {
+        "name": "speklo-admin",
+        "description": "Administer Speklo workspaces"
+      },
+      {
+        "name": "api-designer",
+        "description": "Edit and publish API designs"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "engineering",
+      "subGroups": [
+        {
+          "name": "speklo-dev"
+        },
+        {
+          "name": "speklo-admin"
+        },
+        {
+          "name": "payments"
+        }
+      ]
+    },
+    {
+      "name": "sre"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "speklo-web",
+      "name": "Speklo",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-speklo-web-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "roles"
+      ],
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "openbao",
+      "name": "OpenBao",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-openbao-secret",
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:8200/ui/vault/auth/oidc/oidc/callback",
+        "http://127.0.0.1:8200/ui/vault/auth/oidc/oidc/callback",
+        "http://localhost:8250/oidc/callback"
+      ],
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alex.chen",
+      "email": "alex@acme.dev",
+      "firstName": "Alex",
+      "lastName": "Chen",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "speklo-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "speklo-admin",
+        "api-designer",
+        "offline_access"
+      ],
+      "groups": [
+        "/engineering",
+        "/engineering/speklo-admin",
+        "/engineering/payments"
+      ]
+    },
+    {
+      "username": "priya.raman",
+      "email": "priya@acme.dev",
+      "firstName": "Priya",
+      "lastName": "Raman",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "speklo-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "api-designer"
+      ],
+      "groups": [
+        "/engineering",
+        "/engineering/speklo-dev"
+      ]
+    },
+    {
+      "username": "jonas.tan",
+      "email": "jonas@acme.dev",
+      "firstName": "Jonas",
+      "lastName": "Tan",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "speklo-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [],
+      "groups": [
+        "/sre"
+      ]
+    }
+  ]
+}

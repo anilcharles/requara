@@ -1,0 +1,137 @@
+name: Release
+
+# Every push to main runs release-please. It keeps a release PR open per
+# product (server, desktop). Merging one creates that product's tag and
+# GitHub Release, and the jobs below build and attach what it ships:
+#
+#   server-vX.Y.Z  → ghcr.io/<owner>/<repo>/api and /web images (same tag)
+#                    + speklo-selfhost-X.Y.Z.tar.gz (compose bundle) on the Release
+#   desktop-vX.Y.Z → installers for macOS, Windows and Linux on the Release
+on:
+  push:
+    branches: [main]
+
+# Least privilege: nothing by default, each job asks for what it needs.
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      server: ${{ steps.rp.outputs['server--release_created'] }}
+      server_tag: ${{ steps.rp.outputs['server--tag_name'] }}
+      server_version: ${{ steps.rp.outputs['server--version'] }}
+      desktop: ${{ steps.rp.outputs['desktop--release_created'] }}
+      desktop_tag: ${{ steps.rp.outputs['desktop--tag_name'] }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # ---------- server: two images, one version ----------
+  server-images:
+    needs: release-please
+    if: needs.release-please.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.server_version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.server_version }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=Speklo ${{ matrix.image }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: server/${{ matrix.image }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ needs.release-please.outputs.server_version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  server-bundle:
+    needs: [release-please, server-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
+      - name: Pin the images and version in the bundle
+        env:
+          VERSION: ${{ needs.release-please.outputs.server_version }}
+        run: |
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          cd server/deploy
+          sed -i "s#ghcr.io/OWNER/REPO#${prefix}#g" docker-compose.yml
+          sed -i "s#^SPEKLO_VERSION=.*#SPEKLO_VERSION=${VERSION}#" .env.example
+          cd ..
+          tar czf "speklo-selfhost-${VERSION}.tar.gz" --transform "s#^deploy#speklo#" deploy
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release-please.outputs.server_tag }}" server/speklo-selfhost-*.tar.gz --clobber
+
+  # ---------- desktop: installers on the release ----------
+  desktop:
+    needs: release-please
+    if: needs.release-please.outputs.desktop == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, name: macOS (Apple silicon) }
+          - { os: macos-15-intel, name: macOS (Intel) }
+          - { os: windows-latest, name: Windows }
+          - { os: ubuntu-22.04, name: Linux }
+    name: Desktop · ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    defaults: { run: { working-directory: desktop, shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.release-please.outputs.desktop_tag }}" }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: Linux libraries for GPUI and the keychain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libdbus-1-dev
+      - run: cargo install cargo-packager --locked
+      # Code signing: add the Apple Developer ID / Windows signing secrets and
+      # the matching cargo-packager settings before shipping to customers.
+      # Unsigned builds work but show "unidentified developer" warnings.
+      - run: cargo packager --release
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release-please.outputs.desktop_tag }}" target/packages/* --clobber

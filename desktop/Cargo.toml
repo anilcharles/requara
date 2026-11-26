@@ -1,0 +1,47 @@
+[package]
+name = "speklo-desktop"
+version = "0.1.0"
+edition = "2024"
+description = "Speklo desktop: the enterprise client for Speklo servers, built with GPUI"
+publish = false
+
+[[bin]]
+name = "speklo"
+path = "src/main.rs"
+
+[dependencies]
+gpui-kit = "0.11.0"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+keyring = "4"
+dirs = "7"
+open = "5"
+rand = "0.9"
+sha2 = "0.10"
+base64 = "0.22"
+url = "2"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# Installers (cargo install cargo-packager; cargo packager --release):
+# .dmg/.app on macOS, NSIS .exe on Windows, .deb and AppImage on Linux.
+[package.metadata.packager]
+product-name = "Speklo"
+identifier = "dev.speklo.desktop"
+category = "DeveloperTool"
+description = "The Speklo desktop app for your company's Speklo server"
+before-packaging-command = "cargo build --release"
+out-dir = "target/packages"
+binaries = [{ path = "speklo", main = true }]
+icons = [
+  "assets/icons/32x32.png",
+  "assets/icons/128x128.png",
+  "assets/icons/256x256.png",
+  "assets/icons/512x512.png",
+  "assets/icons/icon.icns",
+  "assets/icons/icon.ico",
+]

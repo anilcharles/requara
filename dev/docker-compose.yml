@@ -1,0 +1,65 @@
+# Local infrastructure for Speklo development.
+# Keycloak here is only the local test identity provider: Speklo itself works
+# with any OpenID Connect provider (see server/deploy/README.md).
+# OpenBao runs on the host in dev mode (see scripts/dev-up.sh) so it can reach
+# Keycloak at the same issuer URL the browser uses (http://localhost:8081).
+name: speklo
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: speklo
+      POSTGRES_PASSWORD: speklo
+      POSTGRES_DB: speklo
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speklo"]
+      interval: 3s
+      retries: 20
+
+  keycloak-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+      POSTGRES_DB: keycloak
+    volumes: [kcdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 3s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HOSTNAME: http://localhost:8081
+      KC_HEALTH_ENABLED: "true"
+    ports: ["8081:8080"]
+    volumes: ["./infra/keycloak:/opt/keycloak/data/import:ro"]
+    depends_on:
+      keycloak-db: { condition: service_healthy }
+
+  s3:
+    # S3-compatible object storage for large response bodies (SeaweedFS).
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/config/s3.json", "-master.volumeSizeLimitMB=256"]
+    ports: ["9000:8333"]
+    volumes: ["s3data:/data", "./infra/seaweedfs:/config:ro"]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["1025:1025", "8025:8025"]
+
+volumes:
+  pgdata: {}
+  kcdata: {}
+  s3data: {}

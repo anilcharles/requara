@@ -1,0 +1,14 @@
+[package]
+name = "icongen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Renders branding/speklo-icon.svg into the app icon files (PNG, .icns, .ico)"
+
+[dependencies]
+resvg = "0.50"
+ico = "0.6"
+anyhow = "1"
+
+# Not part of any workspace.
+[workspace]

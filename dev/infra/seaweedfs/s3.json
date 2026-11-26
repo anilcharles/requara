@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "speklo",
+      "credentials": [{ "accessKey": "speklo", "secretKey": "speklo-dev-s3" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

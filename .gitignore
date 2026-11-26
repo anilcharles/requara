@@ -1,0 +1,14 @@
+# Local dev state: OpenBao credentials, logs, pids
+.dev/
+
+# Build output
+node_modules*/
+dist/
+target/
+*.tsbuildinfo
+server/api/speklo
+
+# Self-host settings with real secrets
+server/deploy/.env
+
+.DS_Store

@@ -1,0 +1,97 @@
+# Speklo, self-hosted. People sign in with the providers you enable in .env
+# (Google, Microsoft, GitHub, GitLab, Okta, Auth0, Keycloak, any OIDC provider).
+#
+#   cp .env.example .env      # then edit it
+#   docker compose up -d
+#
+# Register Speklo with each sign-in provider first (see README.md), then
+# open SPEKLO_URL and sign in.
+# Upgrade: change SPEKLO_VERSION in .env, then `docker compose pull && docker compose up -d`.
+name: speklo
+
+services:
+  # The web UI. nginx serves the app and forwards /api, /auth and /mock to `api`.
+  web:
+    image: ${SPEKLO_IMAGE_PREFIX:-ghcr.io/OWNER/REPO}/web:${SPEKLO_VERSION:-latest}
+    restart: unless-stopped
+    ports: ["${SPEKLO_PORT:-8080}:8080"]
+    depends_on: [api]
+
+  api:
+    image: ${SPEKLO_IMAGE_PREFIX:-ghcr.io/OWNER/REPO}/api:${SPEKLO_VERSION:-latest}
+    restart: unless-stopped
+    # Sign-in providers (SPEKLO_AUTH_*) and access settings come from .env,
+    # so you can add providers without editing this file.
+    env_file: .env
+    environment:
+      SPEKLO_ENV: prod
+      SPEKLO_FRONTEND_URL: ${SPEKLO_URL:-http://localhost:8080}
+      SPEKLO_PUBLIC_URL: ${SPEKLO_URL:-http://localhost:8080}
+      SPEKLO_ORG_NAME: ${SPEKLO_ORG_NAME:-Speklo}
+      SPEKLO_AUTH_PROVIDERS: ${SPEKLO_AUTH_PROVIDERS:?set SPEKLO_AUTH_PROVIDERS in .env (e.g. google,github)}
+      BAO_ADDR: http://openbao:8200
+      BAO_ROLE_ID_FILE: /openbao-creds/role-id
+      BAO_SECRET_ID_FILE: /openbao-creds/secret-id
+    volumes: ["openbao-creds:/openbao-creds:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      openbao: { condition: service_healthy }
+      s3: { condition: service_started }
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: speklo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: speklo
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speklo"]
+      interval: 3s
+      retries: 30
+
+  # Secrets: the backend's own settings, plus Transit encryption for the
+  # secrets people store in environments. Starts, unseals and configures
+  # itself (openbao/entrypoint.sh).
+  openbao:
+    image: openbao/openbao:2.4
+    restart: unless-stopped
+    user: "0"
+    entrypoint: ["/bin/sh", "/openbao/config/entrypoint.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-speklo}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+      SMTP_ADDR: ${SMTP_ADDR:-}
+      SMTP_FROM: ${SMTP_FROM:-Speklo <no-reply@localhost>}
+    volumes:
+      - "./openbao:/openbao/config:ro"
+      - "openbao-data:/openbao/data"
+      - "openbao-keys:/openbao/keys"
+      - "openbao-creds:/openbao/creds"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /openbao/creds/ready"]
+      interval: 3s
+      retries: 60
+
+  # S3-compatible storage for large response bodies.
+  s3:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        printf '{"identities":[{"name":"speklo","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json -master.volumeSizeLimitMB=1024
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-speklo}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes: ["s3data:/data"]
+
+volumes:
+  pgdata: {}
+  s3data: {}
+  openbao-data: {}
+  openbao-keys: {}
+  openbao-creds: {}

@@ -1,0 +1,9 @@
+# Secret scanning settings (gitleaks). Used by CI and locally: `gitleaks git -v`.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local development stack only: fixed throwaway credentials for containers on localhost"
+paths = [
+  '''^dev/''',
+]

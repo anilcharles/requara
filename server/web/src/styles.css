@@ -1,0 +1,25 @@
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+}
+.speklo-row:hover {
+  background: rgba(127, 127, 127, 0.08);
+}
+/* Docs code panels sit on a fixed dark background. */
+.speklo-dark-tabs .ant-tabs-tab {
+  color: rgba(255, 255, 255, 0.45);
+}
+.speklo-dark-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #4096ff !important;
+}
+.speklo-dark-tabs .ant-tabs-ink-bar {
+  background: #4096ff;
+}
+.speklo-dark-tabs.ant-tabs-top > .ant-tabs-nav::before {
+  border-bottom: none;
+}
