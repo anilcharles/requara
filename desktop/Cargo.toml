@@ -19,7 +19,7 @@ keyring = "4"
 dirs = "7"
 open = "5"
 rand = "0.9"
-sha2 = "0.10"
+sha2 = "0.11"
 base64 = "0.22"
 url = "2"
 
