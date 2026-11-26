@@ -1,12 +1,17 @@
-import { CloseOutlined, DownOutlined, PlusOutlined } from "@ant-design/icons";
+import { CloseOutlined, CodeOutlined, DownOutlined, PlusOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Breadcrumb, Button, Dropdown, Input, InputNumber, Layout, Segmented, Select, Space, Spin, Switch, Tabs, theme, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
-import { get, post, put, type Field, type OperationDetail, type RequestDoc, type SendResult } from "../../api";
+import { api, get, post, put, type Field, type OperationDetail, type RequestDoc, type SendResult } from "../../api";
 import { Method, mono } from "../../components/bits";
 import CodeEditor from "../../components/CodeEditor";
 import KeyValueTable from "../../components/KeyValueTable";
+import AuthEditor from "../../components/AuthEditor";
+import CodeSnippetModal from "../../components/CodeSnippet";
+import { BinaryEditor, FormDataEditor } from "../../components/FormDataEditor";
+import ExamplesButton from "./Examples";
+import WebSocketPanel from "./WebSocket";
 import { methodColor } from "../../lib";
 import { CollectionsSider, useCollections } from "../../shell/Layouts";
 import { useEnvironments, useMe, usePrefs } from "../../shell/session";
@@ -14,7 +19,7 @@ import { logSend } from "../../shell/consoleStore";
 import ResponsePane from "./ResponsePane";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
-const TABS_KEY = "speklo.openTabs";
+const TABS_KEY = "requara.openTabs";
 
 // Unsaved edits per request, kept while you switch tabs (the editor remounts per request).
 const drafts = new Map<string, RequestDoc>();
@@ -84,7 +89,7 @@ export default function Requests() {
   if (!id) {
     const first = cols.data?.[0]?.folders[0]?.requests[0];
     if (cols.isLoading) return <Spin style={{ margin: 40 }} />;
-    return first ? <Navigate to={`/requests/${first.id}`} replace /> : <Typography.Text style={{ margin: 40 }}>No requests yet. Create an API first.</Typography.Text>;
+    return first ? <Navigate to={`/requests/${first.id}`} replace /> : <EmptyRequests />;
   }
   return (
     <>
@@ -171,6 +176,30 @@ function Workspace({ id }: { id: string }) {
   );
 }
 
+function EmptyRequests() {
+  const nav = useNavigate();
+  const qc = useQueryClient();
+  const create = useMutation({
+    mutationFn: () => post<RequestDoc>("/api/requests", { name: "Untitled request", method: "GET", url: "", folder: "Scratch" }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["collections"] });
+      nav(`/requests/${r.id}`);
+    },
+  });
+  return (
+    <div style={{ margin: "80px auto", textAlign: "center" }}>
+      <Typography.Title level={4}>No requests yet</Typography.Title>
+      <Typography.Paragraph type="secondary">Send a request to any URL, or create or import an API to get one for every endpoint.</Typography.Paragraph>
+      <Space>
+        <Button type="primary" loading={create.isPending} onClick={() => create.mutate()}>
+          New request
+        </Button>
+        <Button onClick={() => nav("/apis")}>Go to APIs</Button>
+      </Space>
+    </div>
+  );
+}
+
 function NewRequestButton() {
   const nav = useNavigate();
   const qc = useQueryClient();
@@ -197,7 +226,8 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
   const [tab, setTab] = useState("body");
   const [scriptTab, setScriptTab] = useState<"pre" | "post">("post");
   const [result, setResult] = useState<SendResult | null>(null);
-  const [split, setSplit] = useState(() => Number(localStorage.getItem("speklo.split") ?? 0.55));
+  const [split, setSplit] = useState(() => Number(localStorage.getItem("requara.split") ?? 0.55));
+  const [showCode, setShowCode] = useState(false);
   const splitRef = useRef(split);
   const abort = useRef<AbortController | null>(null);
 
@@ -236,16 +266,12 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
     const envId = envs.data?.activeId;
     const entry = { name: draft.name, method: draft.method, url: draft.url, env: envs.data?.items.find((e) => e.id === envId)?.name ?? "" };
     try {
-      const res = await fetch(`/api/requests/${id}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Requested-With": "speklo" },
-        body: JSON.stringify({ draft, environmentId: envId }),
-        signal: abort.current.signal,
-      });
-      const data = await res.json().catch(() => ({ error: `${res.status} ${res.statusText}` }));
-      if (!res.ok) {
-        logSend({ ...entry, error: data.error ?? `${res.status} ${res.statusText}` });
-        throw new Error(data.error);
+      let data: { result: SendResult; environment: string };
+      try {
+        data = await api(`/api/requests/${id}/send`, { method: "POST", json: { draft, environmentId: envId }, signal: abort.current.signal });
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") logSend({ ...entry, error: (err as Error).message });
+        throw err;
       }
       setResult(data.result);
       logSend({ ...entry, env: data.environment || entry.env, result: data.result });
@@ -294,53 +320,7 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
   if (tab === "params") panel = <KeyValueTable rows={draft.params} onChange={(params) => set({ params })} readOnly={readOnly} />;
   else if (tab === "headers") panel = <KeyValueTable rows={draft.headers} onChange={(headers) => set({ headers })} readOnly={readOnly} />;
   else if (tab === "auth") {
-    const a = draft.auth;
-    panel = (
-      <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
-        <Space direction="vertical" size={16} style={{ width: 520 }}>
-          <div>
-            <div style={{ marginBottom: 8 }}>Type</div>
-            <Select
-              value={a.type}
-              style={{ width: "100%" }}
-              onChange={(type) => set({ auth: { ...a, type } })}
-              options={[
-                { value: "inherit", label: "Inherit from environment ({{secret_key}})" },
-                { value: "none", label: "No auth" },
-                { value: "bearer", label: "Bearer token" },
-                { value: "basic", label: "Basic auth" },
-                { value: "apikey", label: "API key" },
-              ]}
-            />
-          </div>
-          {a.type === "bearer" && (
-            <div>
-              <div style={{ marginBottom: 8 }}>Token</div>
-              <Input value={a.token} onChange={(e) => set({ auth: { ...a, token: e.target.value } })} placeholder="{{secret_key}}" style={mono} />
-            </div>
-          )}
-          {a.type === "basic" && (
-            <>
-              <Input addonBefore="Username" value={a.username} onChange={(e) => set({ auth: { ...a, username: e.target.value } })} />
-              <Input.Password addonBefore="Password" value={a.password} onChange={(e) => set({ auth: { ...a, password: e.target.value } })} />
-            </>
-          )}
-          {a.type === "apikey" && (
-            <>
-              <Input addonBefore="Key" value={a.key} onChange={(e) => set({ auth: { ...a, key: e.target.value } })} placeholder="X-API-Key" />
-              <Input addonBefore="Value" value={a.value} onChange={(e) => set({ auth: { ...a, value: e.target.value } })} placeholder="{{api_key}}" style={mono} />
-              <Segmented value={a.in ?? "header"} onChange={(v) => set({ auth: { ...a, in: v as "header" | "query" } })} options={[{ value: "header", label: "Header" }, { value: "query", label: "Query" }]} />
-            </>
-          )}
-          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-            Use {"{{variables}}"} for secrets. Their values come from the active environment, are encrypted in OpenBao, and never leave the server.
-          </Typography.Text>
-        </Space>
-        {a.type === "inherit" && (
-          <Alert style={{ flex: 1 }} type="info" showIcon message={`Requests in ${where?.folder ?? "this folder"} send "Authorization: Bearer {{secret_key}}" when the environment defines secret_key.`} />
-        )}
-      </div>
-    );
+    panel = <AuthEditor auth={draft.auth} onChange={(auth) => set({ auth })} inheritLabel={draft.apiId || draft.collectionId ? "Inherit from collection" : "Inherit (Bearer {{secret_key}} when the environment has it)"} readOnly={!!readOnly} />;
   } else if (tab === "body") {
     panel = (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
@@ -351,9 +331,11 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
             options={[
               { value: "none", label: "none" },
               { value: "form-urlencoded", label: "urlencoded" },
+              { value: "form-data", label: "form-data" },
               { value: "json", label: "JSON" },
               { value: "raw", label: "raw" },
               { value: "graphql", label: "GraphQL" },
+              { value: "binary", label: "binary" },
             ]}
           />
           <Space size={16}>
@@ -375,10 +357,16 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
         </div>
         {draft.bodyMode === "none" ? (
           <Typography.Text type="secondary">This request has no body.</Typography.Text>
+        ) : draft.bodyMode === "form-data" ? (
+          <div style={{ overflow: "auto" }}>
+            <FormDataEditor rows={draft.formData ?? []} onChange={(formData) => set({ formData })} readOnly={!!readOnly} />
+          </div>
+        ) : draft.bodyMode === "binary" ? (
+          <BinaryEditor file={draft.bodyFile} onChange={(bodyFile) => set({ bodyFile })} readOnly={!!readOnly} />
         ) : (
           <div style={{ flex: 1, minHeight: 160, border: `1px solid ${token.colorBorder}`, borderRadius: 8, overflow: "hidden" }}>
             <CodeEditor
-              path={`speklo://request/${id}.json`}
+              path={`requara://request/${id}.json`}
               language={draft.bodyMode === "json" || draft.bodyMode === "graphql" ? "json" : "plaintext"}
               value={draft.body}
               schema={draft.bodyMode === "json" ? schema : null}
@@ -402,7 +390,7 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
           </Typography.Text>
         </div>
         <div style={{ flex: 1, minHeight: 160, border: `1px solid ${token.colorBorder}`, borderRadius: 8, overflow: "hidden" }}>
-          <CodeEditor path={`speklo://script/${id}-${scriptTab}.js`} language="javascript" value={draft[key]} onChange={(v) => set({ [key]: v })} onSubmit={send} readOnly={readOnly} />
+          <CodeEditor path={`requara://script/${id}-${scriptTab}.js`} language="javascript" value={draft[key]} onChange={(v) => set({ [key]: v })} onSubmit={send} readOnly={readOnly} />
         </div>
       </div>
     );
@@ -438,22 +426,51 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
-      localStorage.setItem("speklo.split", String(splitRef.current));
+      localStorage.setItem("requara.split", String(splitRef.current));
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
   };
 
+  const saveExample = async (r: SendResult) => {
+    const name = window.prompt("Name this example", `${r.status} ${r.statusText || ""}`.trim());
+    if (!name) return;
+    try {
+      await post(`/api/requests/${id}/examples`, { name, status: r.status, headers: r.headers, body: r.body });
+      qc.invalidateQueries({ queryKey: ["examples", id] });
+      message.success("Saved as an example");
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
+
+  const topBar = (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <Breadcrumb style={{ flex: 1 }} items={[{ title: where?.api ?? "Requests" }, { title: where?.folder || "Scratch" }, { title: <Input variant="borderless" value={draft.name} onChange={(e) => set({ name: e.target.value })} style={{ fontWeight: 600, padding: 0, width: Math.max(120, draft.name.length * 8 + 20) }} /> }]} />
+      <Button disabled={!dirty || readOnly} loading={save.isPending} onClick={() => save.mutate()}>
+        Save <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>⌘S</Typography.Text>
+      </Button>
+    </div>
+  );
+  if (draft.kind === "websocket") {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: token.colorBgContainer }}>
+        <div style={{ padding: "16px 24px 0" }}>{topBar}</div>
+        <WebSocketPanel draft={draft} set={set} readOnly={!!readOnly} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: token.colorBgContainer }}>
+      <CodeSnippetModal request={draft} open={showCode} onClose={() => setShowCode(false)} />
       <div style={{ flex: `0 0 ${split * 100}%`, display: "flex", flexDirection: "column", padding: "16px 24px", gap: 16, minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Breadcrumb style={{ flex: 1 }} items={[{ title: where?.api ?? "Requests" }, { title: where?.folder || "Scratch" }, { title: <Input variant="borderless" value={draft.name} onChange={(e) => set({ name: e.target.value })} style={{ fontWeight: 600, padding: 0, width: Math.max(120, draft.name.length * 8 + 20) }} /> }]} />
-          {draft.apiId && draft.operationKey && (
-            <Button type="text" onClick={() => nav(`/docs/${draft.apiId}?op=${encodeURIComponent(draft.operationKey)}`)}>
-              View docs
-            </Button>
-          )}
+          <ExamplesButton requestId={id} />
+          <Button type="text" icon={<CodeOutlined />} onClick={() => setShowCode(true)}>
+            Code
+          </Button>
           <Button disabled={!dirty || readOnly} loading={save.isPending} onClick={() => save.mutate()}>
             Save <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>⌘S</Typography.Text>
           </Button>
@@ -507,7 +524,7 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
       </div>
       <div onMouseDown={startDrag} style={{ height: 6, cursor: "row-resize", borderTop: `1px solid ${token.colorSplit}`, flexShrink: 0 }} />
       <div style={{ flex: 1, minHeight: 0 }}>
-        <ResponsePane result={result} sending={sending} onCancel={() => abort.current?.abort()} />
+        <ResponsePane result={result} sending={sending} onCancel={() => abort.current?.abort()} onSaveExample={readOnly ? undefined : (r) => saveExample(r)} />
       </div>
     </div>
   );

@@ -1,0 +1,9 @@
+# Only what the image needs: web/ and api/ sources.
+deploy
+**/node_modules*
+**/dist
+**/*.tsbuildinfo
+**/*.log
+api/requara
+Dockerfile
+.dockerignore

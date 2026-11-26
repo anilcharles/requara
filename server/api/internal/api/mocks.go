@@ -6,15 +6,12 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/anilcharles/speklo/server/api/internal/events"
-	"github.com/anilcharles/speklo/server/api/internal/spec"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/anilcharles/requara/server/api/internal/core"
+	"github.com/anilcharles/requara/server/api/internal/events"
+	"github.com/anilcharles/requara/server/api/internal/spec"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
@@ -194,35 +191,6 @@ func (s *Server) mockStream(w http.ResponseWriter, r *http.Request) {
 
 // ----- the public mock endpoint -----
 
-type route struct {
-	re     *regexp.Regexp
-	names  []string
-	path   string
-	params int
-}
-
-var paramRe = regexp.MustCompile(`\{([^}]+)\}`)
-
-func routesFor(doc *openapi3.T) []route {
-	var out []route
-	for path := range doc.Paths.Map() {
-		var names []string
-		segs := strings.Split(strings.Trim(path, "/"), "/")
-		for i, seg := range segs {
-			if m := paramRe.FindStringSubmatch(seg); m != nil && m[0] == seg {
-				names = append(names, m[1])
-				segs[i] = `([^/]+)`
-			} else {
-				segs[i] = regexp.QuoteMeta(seg)
-			}
-		}
-		pattern := "^/" + strings.Join(segs, "/") + "/?$"
-		out = append(out, route{re: regexp.MustCompile(pattern), names: names, path: path, params: len(names)})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].params < out[j].params }) // literal paths win
-	return out
-}
-
 func (s *Server) serveMock(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -242,7 +210,7 @@ func (s *Server) serveMock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !enabled {
-		problem(w, http.StatusServiceUnavailable, "Mock server is stopped", "Turn it on in Speklo → Mock servers.")
+		problem(w, http.StatusServiceUnavailable, "Mock server is stopped", "Turn it on in Requara → Mock servers.")
 		return
 	}
 	path := "/" + chi.URLParam(r, "*")
@@ -280,103 +248,18 @@ func (s *Server) answerMock(w http.ResponseWriter, r *http.Request, apiID, path 
 			return 499
 		}
 	}
-	if errRate > 0 && rand.IntN(100) < errRate {
-		problem(w, http.StatusInternalServerError, "Injected error", "This mock server returns errors for "+strconv.Itoa(errRate)+"% of calls.")
-		return 500
+	if res, failed := core.InjectedError(errRate); failed {
+		return writeMock(w, res)
 	}
-	var op *openapi3.Operation
-	pathVals := map[string]string{}
-	for _, rt := range routesFor(doc) {
-		m := rt.re.FindStringSubmatch(path)
-		if m == nil {
-			continue
-		}
-		item := doc.Paths.Value(rt.path)
-		if op = item.GetOperation(r.Method); op == nil {
-			problem(w, http.StatusMethodNotAllowed, "Method not allowed", r.Method+" isn't defined for "+rt.path)
-			return 405
-		}
-		for i, n := range rt.names {
-			pathVals[n] = m[i+1]
-		}
-		break
-	}
-	if op == nil {
-		problem(w, http.StatusNotFound, "No such endpoint", path+" isn't in the spec")
-		return 404
-	}
-	// Prefer: code=402 picks a specific documented response.
-	want := ""
-	if pref := r.Header.Get("Prefer"); strings.HasPrefix(pref, "code=") {
-		want = strings.TrimPrefix(pref, "code=")
-	}
-	codes := []string{}
-	for c := range op.Responses.Map() {
-		codes = append(codes, c)
-	}
-	sort.Strings(codes)
-	chosen := ""
-	for _, c := range codes {
-		if (want != "" && c == want) || (want == "" && strings.HasPrefix(c, "2")) {
-			chosen = c
-			break
-		}
-	}
-	if chosen == "" && len(codes) > 0 {
-		chosen = codes[0]
-	}
-	status, _ := strconv.Atoi(chosen)
-	if status == 0 {
-		status = 200
-	}
-	resp := op.Responses.Value(chosen)
-	body := ""
-	if resp != nil && resp.Value != nil {
-		body = spec.ResponseExample(resp.Value)
-	}
-	// Make the example reflect the call: echo path ids and request fields.
-	if body != "" && strings.HasPrefix(body, "{") {
-		var obj map[string]any
-		if json.Unmarshal([]byte(body), &obj) == nil {
-			if id, ok := pathVals["id"]; ok {
-				if _, has := obj["id"]; has {
-					obj["id"] = id
-				}
-			}
-			if status < 300 && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
-				var in map[string]any
-				raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-				if json.Unmarshal(raw, &in) == nil {
-					for k, v := range in {
-						if _, has := obj[k]; has {
-							obj[k] = v
-						}
-					}
-					if c, ok := in["capture"].(bool); ok && !c {
-						if _, has := obj["captured"]; has {
-							obj["captured"], obj["status"], obj["amount_captured"] = false, "requires_capture", 0
-						}
-					}
-				}
-			}
-			var schema *openapi3.Schema
-			if mt := resp.Value.Content.Get("application/json"); mt != nil && mt.Schema != nil {
-				schema = mt.Schema.Value
-			}
-			body = spec.OrderedJSON(obj, schema)
-		}
-	}
-	ct := "application/json"
-	if resp != nil && resp.Value != nil {
-		for k := range resp.Value.Content {
-			ct = k
-			break
-		}
-	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("X-Speklo-Mock", "true")
+	res := core.MockAnswer(doc, r.Method, path, r.Header.Get("Prefer"), r.Body)
+	w.Header().Set("X-Requara-Mock", "true")
 	w.Header().Set("Request-Id", fmt.Sprintf("req_%x", rand.Uint64()))
-	w.WriteHeader(status)
-	_, _ = io.WriteString(w, body)
-	return status
+	return writeMock(w, res)
+}
+
+func writeMock(w http.ResponseWriter, res core.MockResponse) int {
+	w.Header().Set("Content-Type", res.ContentType)
+	w.WriteHeader(res.Status)
+	_, _ = io.WriteString(w, res.Body)
+	return res.Status
 }

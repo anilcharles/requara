@@ -3,16 +3,17 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/anilcharles/speklo/server/api/internal/jobs"
-	"github.com/anilcharles/speklo/server/api/internal/spec"
+	"github.com/anilcharles/requara/server/api/internal/core"
+	"github.com/anilcharles/requara/server/api/internal/jobs"
+	"github.com/anilcharles/requara/server/api/internal/spec"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -152,16 +153,7 @@ func slugify(s string) string {
 	return strings.Trim(slugRe.ReplaceAllString(strings.ToLower(s), "-"), "-")
 }
 
-func normalizeVersion(v string) string {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return "v1.0.0"
-	}
-	if !strings.HasPrefix(v, "v") {
-		v = "v" + v
-	}
-	return v
-}
+func normalizeVersion(v string) string { return core.NormalizeVersion(v) }
 
 func (s *Server) getAPI(w http.ResponseWriter, r *http.Request) {
 	a, doc, ok := s.apiOr404(w, r)
@@ -197,7 +189,7 @@ func (s *Server) createAPI(w http.ResponseWriter, r *http.Request) {
 		doc.Info.Description = in.Description
 	}
 	if in.StartFrom == "template" {
-		addResourceTemplate(doc)
+		core.AddResourceTemplate(doc)
 	}
 	id, err := s.saveNewAPI(r.Context(), p, in.Name, in.Description, version, doc)
 	if err != nil {
@@ -208,8 +200,8 @@ func (s *Server) createAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveNewAPI(ctx context.Context, p *Principal, name, description, version string, doc *openapi3.T) (string, error) {
-	if err := doc.Validate(ctx, openapi3.DisableExamplesValidation()); err != nil {
-		return "", fmt.Errorf("invalid OpenAPI: %w", err)
+	if err := core.Validate(ctx, doc); err != nil {
+		return "", err
 	}
 	raw, err := spec.ToJSON(doc)
 	if err != nil {
@@ -233,7 +225,7 @@ func (s *Server) saveNewAPI(ctx context.Context, p *Principal, name, description
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO apis (workspace_id, name, slug, description, owner, base_url, draft_spec, draft_version)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-		p.WorkspaceID, name, slug, firstSentence(description), p.Name, spec.BaseURL(doc), raw, version).Scan(&id); err != nil {
+		p.WorkspaceID, name, slug, core.FirstSentence(description), p.Name, spec.BaseURL(doc), raw, version).Scan(&id); err != nil {
 		return "", err
 	}
 	if err := SyncRequests(ctx, tx, p.WorkspaceID, id, doc, spec.BaseURL(doc)); err != nil {
@@ -241,19 +233,6 @@ func (s *Server) saveNewAPI(ctx context.Context, p *Principal, name, description
 	}
 	return id, tx.Commit(ctx)
 }
-
-func firstSentence(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexAny(s, ".\n"); i > 0 && i < 120 {
-		return s[:i]
-	}
-	if len(s) > 120 {
-		return s[:117] + "…"
-	}
-	return s
-}
-
-var pathParam = regexp.MustCompile(`\{([^}]+)\}`)
 
 // SyncRequests creates a saved request for every operation that lacks one.
 func SyncRequests(ctx context.Context, tx pgx.Tx, ws, apiID string, doc *openapi3.T, urlPrefix string) error {
@@ -269,69 +248,17 @@ func SyncRequests(ctx context.Context, tx pgx.Tx, ws, apiID string, doc *openapi
 	for _, k := range keys {
 		existing[k] = true
 	}
-	for i, op := range spec.Operations(doc) {
-		if existing[op.Key] {
-			continue
-		}
-		o, _, _ := spec.Find(doc, op.Key)
-		body, mode := spec.RequestExample(o), "none"
-		headers := []map[string]any{{"key": "Accept", "value": "application/json", "enabled": true}}
-		if body != "" {
-			mode = "json"
-			headers = append([]map[string]any{{"key": "Content-Type", "value": "application/json", "enabled": true}}, headers...)
-		}
-		var params []map[string]any
-		for _, prm := range o.Parameters {
-			if prm.Value != nil && prm.Value.In == "query" {
-				params = append(params, map[string]any{"key": prm.Value.Name, "value": "", "description": prm.Value.Description, "enabled": false})
-			}
-		}
-		if params == nil {
-			params = []map[string]any{}
-		}
-		name := op.Summary
-		if name == "" {
-			name = op.Key
-		}
-		url := urlPrefix + pathParam.ReplaceAllString(op.Path, "{{$1}}")
-		hj, _ := json.Marshal(headers)
-		pj, _ := json.Marshal(params)
+	for _, nr := range core.RequestsFor(doc, existing, urlPrefix) {
+		hj, _ := json.Marshal(nr.Headers)
+		pj, _ := json.Marshal(nr.Params)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO requests (workspace_id, api_id, folder, name, method, url, params, headers, body_mode, body, operation_key, sort)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-			ws, apiID, op.Tag, name, op.Method, url, pj, hj, mode, body, op.Key, i); err != nil {
+			ws, apiID, nr.Folder, nr.Name, nr.Method, nr.URL, pj, hj, nr.BodyMode, nr.Body, nr.OperationKey, nr.Sort); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func addResourceTemplate(doc *openapi3.T) {
-	item := openapi3.NewObjectSchema().
-		WithProperty("id", openapi3.NewStringSchema()).
-		WithProperty("name", openapi3.NewStringSchema()).
-		WithProperty("created_at", openapi3.NewDateTimeSchema())
-	item.Properties["id"].Value.Example = "itm_123"
-	item.Properties["name"].Value.Example = "First item"
-	doc.Components = &openapi3.Components{Schemas: openapi3.Schemas{"Item": openapi3.NewSchemaRef("", item)}}
-	ref := openapi3.NewSchemaRef("#/components/schemas/Item", item)
-	ok := func(desc string, schema *openapi3.SchemaRef) *openapi3.Responses {
-		resp := openapi3.NewResponse().WithDescription(desc).WithJSONSchemaRef(schema)
-		return openapi3.NewResponses(openapi3.WithStatus(200, &openapi3.ResponseRef{Value: resp}))
-	}
-	body := &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().WithRequired(true).WithJSONSchema(
-		openapi3.NewObjectSchema().WithProperty("name", openapi3.NewStringSchema()).WithRequired([]string{"name"}))}
-	idParam := &openapi3.ParameterRef{Value: openapi3.NewPathParameter("id").WithSchema(openapi3.NewStringSchema())}
-	doc.Tags = openapi3.Tags{{Name: "Items"}}
-	doc.Paths.Set("/items", &openapi3.PathItem{
-		Get:  &openapi3.Operation{Tags: []string{"Items"}, OperationID: "listItems", Summary: "List items", Responses: ok("Items", openapi3.NewSchemaRef("", openapi3.NewArraySchema().WithItems(item)))},
-		Post: &openapi3.Operation{Tags: []string{"Items"}, OperationID: "createItem", Summary: "Create an item", RequestBody: body, Responses: ok("Created", ref)},
-	})
-	doc.Paths.Set("/items/{id}", &openapi3.PathItem{
-		Parameters: openapi3.Parameters{idParam},
-		Get:        &openapi3.Operation{Tags: []string{"Items"}, OperationID: "getItem", Summary: "Retrieve an item", Responses: ok("The item", ref)},
-		Delete:     &openapi3.Operation{Tags: []string{"Items"}, OperationID: "deleteItem", Summary: "Delete an item", Responses: ok("Deleted", ref)},
-	})
 }
 
 // importAPI takes an uploaded file (multipart "file") or {"url": "..."}.
@@ -405,33 +332,17 @@ func (s *Server) getOperation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	key := r.URL.Query().Get("key")
-	op, item, err := spec.Find(doc, key)
-	if err != nil {
-		httpError(w, http.StatusNotFound, err.Error())
-		return
-	}
-	fields := spec.Fields(op)
 	pub, _, err := s.published(r.Context(), a.ID)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	isNewOp := false
-	if pub != nil {
-		pubOp, _, perr := spec.Find(pub, key)
-		if perr == nil {
-			spec.MarkNew(fields, pubOp)
-		} else {
-			isNewOp = true
-		}
+	out, err := core.OperationDetail(doc, pub, r.URL.Query().Get("key"))
+	if err != nil {
+		httpError(w, http.StatusNotFound, err.Error())
+		return
 	}
-	method, path, _ := spec.SplitKey(key)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"key": key, "method": method, "path": path, "summary": op.Summary, "description": op.Description,
-		"operationId": op.OperationID, "fields": fields, "params": spec.Params(op, item),
-		"contentType": "application/json", "new": isNewOp, "responses": spec.Responses(op),
-	})
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) updateOperation(w http.ResponseWriter, r *http.Request) {
@@ -443,59 +354,21 @@ func (s *Server) updateOperation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in struct {
-		Key         string       `json:"key"`
-		Method      string       `json:"method"`
-		Path        string       `json:"path"`
-		Summary     string       `json:"summary"`
-		Description string       `json:"description"`
-		Fields      []spec.Field `json:"fields"`
-	}
+	var in core.OperationEdit
 	if !readJSON(w, r, &in) {
 		return
 	}
-	op, item, err := spec.Find(doc, in.Key)
+	newKey, err := core.UpdateOperation(r.Context(), doc, in)
 	if err != nil {
-		httpError(w, http.StatusNotFound, err.Error())
+		var ee *core.EditError
+		if errors.As(err, &ee) {
+			httpError(w, ee.Status, ee.Msg)
+			return
+		}
+		serverError(w, err)
 		return
 	}
-	op.Summary, op.Description = strings.TrimSpace(in.Summary), strings.TrimSpace(in.Description)
-	if in.Fields != nil {
-		if len(in.Fields) == 0 {
-			op.RequestBody = nil
-		} else if err := spec.SetFields(op, in.Fields); err != nil {
-			httpError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-	newMethod, newPath := strings.ToUpper(strings.TrimSpace(in.Method)), strings.TrimSpace(in.Path)
-	oldMethod, oldPath, _ := spec.SplitKey(in.Key)
-	newKey := in.Key
-	if newMethod != "" && newPath != "" && (newMethod != oldMethod || newPath != oldPath) {
-		if !strings.HasPrefix(newPath, "/") {
-			httpError(w, http.StatusBadRequest, "Paths start with /")
-			return
-		}
-		if _, _, err := spec.Find(doc, spec.OpKey(newMethod, newPath)); err == nil {
-			httpError(w, http.StatusConflict, newMethod+" "+newPath+" already exists")
-			return
-		}
-		item.SetOperation(oldMethod, nil)
-		if len(item.Operations()) == 0 {
-			doc.Paths.Delete(oldPath)
-		}
-		target := doc.Paths.Value(newPath)
-		if target == nil {
-			target = &openapi3.PathItem{}
-			doc.Paths.Set(newPath, target)
-		}
-		target.SetOperation(newMethod, op)
-		newKey = spec.OpKey(newMethod, newPath)
-	}
-	if err := doc.Validate(r.Context(), openapi3.DisableExamplesValidation()); err != nil {
-		httpError(w, http.StatusBadRequest, "That change makes the spec invalid: "+err.Error())
-		return
-	}
+	newMethod, _, _ := spec.SplitKey(newKey)
 	raw, _ := spec.ToJSON(doc)
 	if _, err := s.db.Exec(r.Context(), `UPDATE apis SET draft_spec=$2, updated_at=now() WHERE id=$1`, a.ID, raw); err != nil {
 		serverError(w, err)
@@ -515,48 +388,12 @@ func (s *Server) lintAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, spec.Lint(a.DraftSpec))
 }
 
-func bump(version string, changes []spec.Change) string {
-	v := strings.TrimPrefix(version, "v")
-	parts := strings.SplitN(v, ".", 3)
-	for len(parts) < 3 {
-		parts = append(parts, "0")
-	}
-	n := make([]int, 3)
-	for i, s := range parts {
-		n[i], _ = strconv.Atoi(strings.SplitN(s, "-", 2)[0])
-	}
-	breaking, added := false, false
-	for _, c := range changes {
-		breaking = breaking || c.Breaking
-		added = added || c.Kind == "added"
-	}
-	switch {
-	case breaking:
-		n = []int{n[0] + 1, 0, 0}
-	case added:
-		n = []int{n[0], n[1] + 1, 0}
-	default:
-		n[2]++
-	}
-	return fmt.Sprintf("v%d.%d.%d", n[0], n[1], n[2])
-}
-
 func (s *Server) changesFor(ctx context.Context, a *apiRow, draft *openapi3.T) ([]spec.Change, string, string, error) {
 	pub, pubVersion, err := s.published(ctx, a.ID)
 	if err != nil {
 		return nil, "", "", err
 	}
-	if pub == nil {
-		return []spec.Change{}, "", a.DraftVersion, nil
-	}
-	changes, err := spec.Diff(pub, draft)
-	if err != nil {
-		return nil, "", "", err
-	}
-	if changes == nil {
-		changes = []spec.Change{}
-	}
-	return changes, pubVersion, bump(pubVersion, changes), nil
+	return core.Changes(draft, pub, pubVersion, a.DraftVersion)
 }
 
 func (s *Server) apiChanges(w http.ResponseWriter, r *http.Request) {
@@ -648,6 +485,7 @@ func (s *Server) publishAPI(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	s.audit(ctx, r, p, auditEntry{Action: "api.published", TargetType: "api", TargetID: a.ID, TargetLabel: a.Name + " " + version, WorkspaceID: a.WorkspaceID})
 	writeJSON(w, http.StatusOK, map[string]any{"version": version, "changes": changes})
 }
 
@@ -692,23 +530,7 @@ func (s *Server) apiDocs(w http.ResponseWriter, r *http.Request) {
 		doc, version, isDraft = draft, a.DraftVersion, true
 	}
 	base := spec.BaseURL(doc)
-	type opDoc struct {
-		spec.Operation
-		Params         []spec.Param        `json:"params"`
-		Fields         []spec.Field        `json:"fields"`
-		RequestExample string              `json:"requestExample"`
-		Responses      []spec.ResponseInfo `json:"responses"`
-		Samples        map[string]string   `json:"samples"`
-	}
-	ops := []opDoc{}
-	for _, o := range spec.Operations(doc) {
-		op, item, _ := spec.Find(doc, o.Key)
-		ops = append(ops, opDoc{
-			Operation: o, Params: spec.Params(op, item), Fields: spec.Fields(op),
-			RequestExample: spec.RequestExample(op), Responses: spec.Responses(op),
-			Samples: spec.Samples(base, o.Method, o.Path, op),
-		})
-	}
+	ops := core.DocOperations(doc)
 	var mockURL string
 	var slug string
 	if err := s.db.QueryRow(r.Context(), `SELECT slug FROM mock_servers WHERE api_id=$1 AND enabled ORDER BY created_at LIMIT 1`, a.ID).Scan(&slug); err == nil {

@@ -1,5 +1,5 @@
 // Package db opens the Postgres pool and applies schema migrations
-// (goose for Speklo's tables, River's own migrator for the job queue).
+// (goose for Requara's tables, River's own migrator for the job queue).
 package db
 
 import (

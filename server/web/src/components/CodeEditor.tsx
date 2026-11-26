@@ -22,7 +22,7 @@ function defineThemes() {
   if (themesDefined) return;
   themesDefined = true;
   // Syntax colours from Ant Design's palette, matching the Figma design.
-  monaco.editor.defineTheme("speklo-light", {
+  monaco.editor.defineTheme("requara-light", {
     base: "vs",
     inherit: true,
     rules: [
@@ -36,7 +36,7 @@ function defineThemes() {
     ],
     colors: { "editor.background": "#FFFFFF", "editorLineNumber.foreground": "#BFBFBF", "editorGutter.background": "#FAFAFA" },
   });
-  monaco.editor.defineTheme("speklo-dark", {
+  monaco.editor.defineTheme("requara-dark", {
     base: "vs-dark",
     inherit: true,
     rules: [
@@ -81,7 +81,7 @@ export default function CodeEditor({ value, language, onChange, readOnly, height
     monaco.json.jsonDefaults.setDiagnosticsOptions({
       validate: true,
       allowComments: false,
-      schemas: schema ? [...others, { uri: `speklo://schema/${encodeURIComponent(path)}`, fileMatch: [uri], schema }] : others,
+      schemas: schema ? [...others, { uri: `requara://schema/${encodeURIComponent(path)}`, fileMatch: [uri], schema }] : others,
     });
   }, [path, schema, language]);
 
@@ -100,7 +100,7 @@ export default function CodeEditor({ value, language, onChange, readOnly, height
       <Editor
         beforeMount={defineThemes}
         onMount={onMount}
-        theme={isDark ? "speklo-dark" : "speklo-light"}
+        theme={isDark ? "requara-dark" : "requara-light"}
         language={language}
         path={path}
         value={value}

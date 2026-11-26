@@ -1,18 +1,35 @@
 import { InboxOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Button, Divider, Form, Input, Layout, Modal, Radio, Segmented, Table, theme, Typography, Upload } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, get, post, type ApiSummary } from "../api";
+import { api, get, post, type ApiSummary, type Collection } from "../api";
 import { Dot, PageHeader } from "../components/bits";
 import { compactNumber, timeAgo } from "../lib";
 
 const statusDot: Record<string, string> = { published: "#52C41A", draft: "#BFBFBF", deprecated: "#FAAD14" };
 
+/** Opens an API: its first request in the Requests view. */
+function useOpenApi() {
+  const nav = useNavigate();
+  const qc = useQueryClient();
+  return async (id: string) => {
+    const cols = await qc.fetchQuery({ queryKey: ["collections"], queryFn: () => get<Collection[]>("/api/collections"), staleTime: 0 });
+    const first = cols.find((c) => c.id === id)?.folders.flatMap((f) => f.requests)[0];
+    nav(first ? `/requests/${first.id}` : "/requests");
+  };
+}
+
 export default function Apis() {
   const { token } = theme.useToken();
-  const nav = useNavigate();
+  const openApi = useOpenApi();
   const [params, setParams] = useSearchParams();
+  // The command palette opens an API with ?open=<id>.
+  useEffect(() => {
+    const id = params.get("open");
+    if (id) openApi(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   const [filter, setFilter] = useState<string>("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"updated" | "name" | "calls">("updated");
@@ -83,7 +100,7 @@ export default function Apis() {
         loading={list.isLoading}
         dataSource={items}
         pagination={false}
-        onRow={(a) => ({ onClick: () => nav(`/design/${a.id}`), style: { cursor: "pointer" } })}
+        onRow={(a) => ({ onClick: () => openApi(a.id), style: { cursor: "pointer" } })}
         locale={{ emptyText: q ? `No APIs match “${q}”` : "No APIs here yet" }}
         columns={[
           {
@@ -139,7 +156,7 @@ export default function Apis() {
 
 function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm();
-  const nav = useNavigate();
+  const openApi = useOpenApi();
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [start, setStart] = useState("blank");
@@ -150,7 +167,7 @@ function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       qc.invalidateQueries({ queryKey: ["collections"] });
       message.success("API created");
       onClose();
-      nav(`/design/${id}`);
+      openApi(id);
     },
     onError: (e: Error) => message.error(e.message),
   });
@@ -182,7 +199,7 @@ function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) 
 }
 
 function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const nav = useNavigate();
+  const openApi = useOpenApi();
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [url, setUrl] = useState("");
@@ -204,7 +221,7 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       setFile(null);
       setUrl("");
       onClose();
-      nav(`/design/${r.id}`);
+      openApi(r.id);
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -227,7 +244,7 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
           <InboxOutlined />
         </p>
         <p className="ant-upload-text">Drop an OpenAPI 3.x or Swagger 2.0 file</p>
-        <p className="ant-upload-hint">YAML or JSON, up to 10 MB. Speklo creates the collection and docs.</p>
+        <p className="ant-upload-hint">YAML or JSON, up to 10 MB. Requara creates the collection and docs.</p>
       </Upload.Dragger>
       <Divider plain style={{ fontSize: 12 }}>
         or import from a URL

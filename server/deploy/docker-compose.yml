@@ -1,38 +1,43 @@
-# Speklo, self-hosted. People sign in with the providers you enable in .env
-# (Google, Microsoft, GitHub, GitLab, Okta, Auth0, Keycloak, any OIDC provider).
+# Requara, self-hosted. People sign in with the providers you enable in .env
+# (Google, Microsoft, GitHub, GitLab, Okta, Auth0, Keycloak, any OIDC or SAML
+# provider, or one-time email links).
 #
 #   cp .env.example .env      # then edit it
+#   echo you@your-company.com >> admins.txt   # instance admins (a Docker secret)
 #   docker compose up -d
 #
-# Register Speklo with each sign-in provider first (see README.md), then
-# open SPEKLO_URL and sign in.
-# Upgrade: change SPEKLO_VERSION in .env, then `docker compose pull && docker compose up -d`.
-name: speklo
+# Register Requara with each sign-in provider first (see README.md), then
+# open REQUARA_URL and sign in.
+# Upgrade: change REQUARA_VERSION in .env, then `docker compose pull && docker compose up -d`.
+name: requara
 
 services:
-  # The web UI. nginx serves the app and forwards /api, /auth and /mock to `api`.
-  web:
-    image: ${SPEKLO_IMAGE_PREFIX:-ghcr.io/OWNER/REPO}/web:${SPEKLO_VERSION:-latest}
+  # The Requara server: one Go program serving the web UI, the API, sign-in
+  # and mock servers on one address.
+  requara:
+    image: ${REQUARA_IMAGE_PREFIX:-ghcr.io/OWNER/REPO}/server:${REQUARA_VERSION:-latest}
     restart: unless-stopped
-    ports: ["${SPEKLO_PORT:-8080}:8080"]
-    depends_on: [api]
-
-  api:
-    image: ${SPEKLO_IMAGE_PREFIX:-ghcr.io/OWNER/REPO}/api:${SPEKLO_VERSION:-latest}
-    restart: unless-stopped
-    # Sign-in providers (SPEKLO_AUTH_*) and access settings come from .env,
+    ports: ["${REQUARA_PORT:-8080}:8080"]
+    # Sign-in providers (REQUARA_AUTH_*) and access settings come from .env,
     # so you can add providers without editing this file.
     env_file: .env
     environment:
-      SPEKLO_ENV: prod
-      SPEKLO_FRONTEND_URL: ${SPEKLO_URL:-http://localhost:8080}
-      SPEKLO_PUBLIC_URL: ${SPEKLO_URL:-http://localhost:8080}
-      SPEKLO_ORG_NAME: ${SPEKLO_ORG_NAME:-Speklo}
-      SPEKLO_AUTH_PROVIDERS: ${SPEKLO_AUTH_PROVIDERS:?set SPEKLO_AUTH_PROVIDERS in .env (e.g. google,github)}
+      REQUARA_ENV: prod
+      REQUARA_FRONTEND_URL: ${REQUARA_URL:-http://localhost:8080}
+      REQUARA_PUBLIC_URL: ${REQUARA_URL:-http://localhost:8080}
+      REQUARA_ORG_NAME: ${REQUARA_ORG_NAME:-Requara}
+      REQUARA_AUTH_PROVIDERS: ${REQUARA_AUTH_PROVIDERS:?set REQUARA_AUTH_PROVIDERS in .env (e.g. google,github)}
       BAO_ADDR: http://openbao:8200
       BAO_ROLE_ID_FILE: /openbao-creds/role-id
       BAO_SECRET_ID_FILE: /openbao-creds/secret-id
-    volumes: ["openbao-creds:/openbao-creds:ro"]
+      # Instance admins: emails in admins.txt (mounted as a Docker secret),
+      # plus any in REQUARA_ADMIN_EMAILS in .env. Nobody becomes admin from the browser.
+      REQUARA_ADMIN_EMAILS_FILE: /run/secrets/requara_admins
+    secrets: [requara_admins]
+    volumes:
+      - "openbao-creds:/openbao-creds:ro"
+      # SAML metadata, certificates and signing keys, if you use files for them.
+      - "./saml:/etc/requara/saml:ro"
     depends_on:
       postgres: { condition: service_healthy }
       openbao: { condition: service_healthy }
@@ -42,12 +47,12 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_USER: speklo
+      POSTGRES_USER: requara
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: speklo
+      POSTGRES_DB: requara
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U speklo"]
+      test: ["CMD-SHELL", "pg_isready -U requara"]
       interval: 3s
       retries: 30
 
@@ -61,10 +66,10 @@ services:
     entrypoint: ["/bin/sh", "/openbao/config/entrypoint.sh"]
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-speklo}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-requara}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
       SMTP_ADDR: ${SMTP_ADDR:-}
-      SMTP_FROM: ${SMTP_FROM:-Speklo <no-reply@localhost>}
+      SMTP_FROM: ${SMTP_FROM:-Requara <no-reply@localhost>}
     volumes:
       - "./openbao:/openbao/config:ro"
       - "openbao-data:/openbao/data"
@@ -82,12 +87,16 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        printf '{"identities":[{"name":"speklo","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
+        printf '{"identities":[{"name":"requara","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
         exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json -master.volumeSizeLimitMB=1024
     environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-speklo}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-requara}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
     volumes: ["s3data:/data"]
+
+secrets:
+  requara_admins:
+    file: ${REQUARA_ADMINS_FILE:-./admins.txt}
 
 volumes:
   pgdata: {}

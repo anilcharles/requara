@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Configures a dev OpenBao (root token "root") for Speklo:
-#  - platform secrets in KV v2 at secret/speklo/dev/*
+# Configures a dev OpenBao (root token "root") for Requara:
+#  - platform secrets in KV v2 at secret/requara/dev/*
 #  - Transit engine for customer secrets
 #  - AppRole login for the backend (credentials written to .dev/)
 #  - OIDC login for developers through Keycloak, mapped by Keycloak group
@@ -11,12 +11,12 @@ export BAO_TOKEN=${BAO_TOKEN:-root}
 mkdir -p .dev
 
 # --- platform secrets the backend needs ---
-bao kv put -mount=secret speklo/dev/postgres url="postgres://speklo:speklo@localhost:5433/speklo?sslmode=disable" >/dev/null
-bao kv put -mount=secret speklo/dev/oidc issuer="http://localhost:8081/realms/acme" client_id="speklo-web" client_secret="dev-speklo-web-secret" >/dev/null
-bao kv put -mount=secret speklo/dev/s3 endpoint="localhost:9000" access_key="speklo" secret_key="speklo-dev-s3" bucket="speklo-bodies" >/dev/null
-bao kv put -mount=secret speklo/dev/smtp addr="localhost:1025" from="Speklo <no-reply@speklo.local>" >/dev/null
-if ! bao kv get -mount=secret speklo/dev/session >/dev/null 2>&1; then
-  bao kv put -mount=secret speklo/dev/session hash_key="$(openssl rand -hex 32)" >/dev/null
+bao kv put -mount=secret requara/dev/postgres url="postgres://requara:requara@localhost:5433/requara?sslmode=disable" >/dev/null
+bao kv put -mount=secret requara/dev/oidc issuer="http://localhost:8081/realms/acme" client_id="requara-web" client_secret="dev-requara-web-secret" >/dev/null
+bao kv put -mount=secret requara/dev/s3 endpoint="localhost:9000" access_key="requara" secret_key="requara-dev-s3" bucket="requara-bodies" >/dev/null
+bao kv put -mount=secret requara/dev/smtp addr="localhost:1025" from="Requara <no-reply@requara.local>" >/dev/null
+if ! bao kv get -mount=secret requara/dev/session >/dev/null 2>&1; then
+  bao kv put -mount=secret requara/dev/session hash_key="$(openssl rand -hex 32)" >/dev/null
 fi
 
 # --- Transit for customer environment secrets ---
@@ -27,9 +27,9 @@ for p in dev/infra/openbao/policies/*.hcl; do bao policy write "$(basename "$p" 
 
 # --- AppRole for the backend ---
 bao auth list -format=json | grep -q '"approle/"' || bao auth enable approle >/dev/null
-bao write auth/approle/role/speklo-backend token_policies=speklo-backend token_ttl=1h token_max_ttl=24h secret_id_ttl=0 >/dev/null
-bao read -field=role_id auth/approle/role/speklo-backend/role-id > .dev/approle-role-id
-bao write -f -field=secret_id auth/approle/role/speklo-backend/secret-id > .dev/approle-secret-id
+bao write auth/approle/role/requara-backend token_policies=requara-backend token_ttl=1h token_max_ttl=24h secret_id_ttl=0 >/dev/null
+bao read -field=role_id auth/approle/role/requara-backend/role-id > .dev/approle-role-id
+bao write -f -field=secret_id auth/approle/role/requara-backend/secret-id > .dev/approle-secret-id
 
 # --- developers sign in with Keycloak ---
 bao auth list -format=json | grep -q '"oidc/"' || bao auth enable oidc >/dev/null
@@ -47,7 +47,7 @@ map_group() { # $1 = keycloak group path, $2 = openbao policy
   bao list -format=json identity/group-alias/id 2>/dev/null | grep -q . || true
   bao write identity/group-alias name="$1" mount_accessor="$ACCESSOR" canonical_id="$gid" >/dev/null 2>&1 || true
 }
-map_group "/engineering/speklo-dev" speklo-dev
-map_group "/engineering/speklo-admin" speklo-admin
+map_group "/engineering/requara-dev" requara-dev
+map_group "/engineering/requara-admin" requara-admin
 map_group "/sre" sre
 echo "OpenBao ready: platform secrets, transit, approle (.dev/approle-*), oidc via Keycloak"

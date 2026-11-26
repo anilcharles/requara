@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/anilcharles/speklo/server/api/internal/config"
+	"github.com/anilcharles/requara/server/api/internal/config"
 )
 
 // githubProvider signs in with GitHub (github.com or GitHub Enterprise
@@ -90,6 +90,7 @@ func (g *githubProvider) exchange(ctx context.Context, code string, st *loginSta
 	for _, e := range emails {
 		if e.Primary && e.Verified {
 			cl.Email = e.Email
+			cl.EmailVerified = true
 		}
 	}
 	if cl.Email == "" {
@@ -120,7 +121,7 @@ func (g *githubProvider) exchange(ctx context.Context, code string, st *loginSta
 	}) bool {
 		return slices.ContainsFunc(g.cfg.AllowedOrgs, func(a string) bool { return strings.EqualFold(a, o.Login) })
 	}) {
-		return nil, "", fmt.Errorf("sign in with a GitHub account in %s (and allow Speklo to see that organization)",
+		return nil, "", fmt.Errorf("sign in with a GitHub account in %s (and allow Requara to see that organization)",
 			strings.Join(g.cfg.AllowedOrgs, " or "))
 	}
 	return cl, "", nil

@@ -39,8 +39,8 @@ func claimStrings(claims map[string]any, paths []string) []string {
 }
 
 // Matches reports whether any of the person's roles or groups is in wanted.
-// A group path such as "/engineering/speklo-admin" also matches by its last
-// segment, so "speklo-admin" works across providers.
+// A group path such as "/engineering/requara-admin" also matches by its last
+// segment, so "requara-admin" works across providers.
 func Matches(values, wanted []string) bool {
 	for _, v := range values {
 		last := v[strings.LastIndex(v, "/")+1:]

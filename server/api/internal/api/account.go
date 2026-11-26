@@ -1,23 +1,19 @@
 package api
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/anilcharles/speklo/server/api/internal/auth"
-	"github.com/anilcharles/speklo/server/api/internal/jobs"
+	"github.com/anilcharles/requara/server/api/internal/jobs"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
@@ -34,122 +30,6 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err := s.signin.Begin(w, r, strings.HasPrefix(s.cfg.FrontendURL, "https://")); err != nil {
 		http.Redirect(w, r, s.cfg.FrontendURL+"/signin?error="+urlQuery(err.Error()), http.StatusFound)
 	}
-}
-
-// mayJoin decides whether someone who signed in may use this install: their
-// email domain is allowed (SPEKLO_ALLOWED_DOMAINS), or they were invited, or
-// they already have an account.
-func (s *Server) mayJoin(ctx context.Context, tx pgx.Tx, subject, email string) (bool, error) {
-	_, domain, _ := strings.Cut(strings.ToLower(email), "@")
-	if slices.Contains(s.cfg.AllowedDomains, "*") || slices.Contains(s.cfg.AllowedDomains, domain) {
-		return true, nil
-	}
-	var ok bool
-	err := tx.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)
-		    OR EXISTS (SELECT 1 FROM invites WHERE lower(email) = lower($2))`, subject, email).Scan(&ok)
-	return ok, err
-}
-
-func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
-	res, err := s.signin.Finish(w, r)
-	if err != nil {
-		http.Redirect(w, r, s.cfg.FrontendURL+"/signin?error="+urlQuery(err.Error()), http.StatusFound)
-		return
-	}
-	cl, idToken, redirect := res.Claims, res.IDToken, res.Redirect
-	ctx := r.Context()
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		serverError(w, err)
-		return
-	}
-	defer tx.Rollback(ctx)
-	// Sign-in errors go back to where the sign-in started.
-	fail := func(msg string) {
-		if res.DesktopPort != 0 {
-			http.Redirect(w, r, fmt.Sprintf("http://127.0.0.1:%d/callback?error=%s", res.DesktopPort, url.QueryEscape(msg)), http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, s.cfg.FrontendURL+"/signin?error="+urlQuery(msg), http.StatusFound)
-	}
-	if ok, err := s.mayJoin(ctx, tx, cl.Subject, cl.Email); err != nil {
-		serverError(w, err)
-		return
-	} else if !ok {
-		fail(fmt.Sprintf("%s isn't part of %s on Speklo. Ask an admin to invite you.", cl.Email, s.cfg.OrgName))
-		return
-	}
-	roles, groups := cl.Roles, cl.Groups
-	if roles == nil {
-		roles = []string{}
-	}
-	if groups == nil {
-		groups = []string{}
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO users (id, username, email, name, roles, groups, provider) VALUES ($1,$2,$3,$4,$5,$6,$7)
-		ON CONFLICT (id) DO UPDATE SET username=$2, email=$3, name=$4, roles=$5, groups=$6, provider=$7, last_login_at=now()`,
-		cl.Subject, cl.Username, cl.Email, cl.Name, roles, groups, res.Provider); err != nil {
-		serverError(w, err)
-		return
-	}
-	// Everyone at the organization joins its workspace; admins
-	// (SPEKLO_ADMIN_GROUPS, matched against roles and groups) as owners.
-	role := "editor"
-	if auth.Matches(append(slices.Clone(roles), groups...), s.cfg.AdminGroups) {
-		role = "owner"
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO members (workspace_id, user_id, role)
-		SELECT id, $1, $2 FROM workspaces WHERE slug = 'acme-payments'
-		ON CONFLICT (workspace_id, user_id) DO NOTHING`, cl.Subject, role); err != nil {
-		serverError(w, err)
-		return
-	}
-	_, _ = tx.Exec(ctx, `
-		INSERT INTO members (workspace_id, user_id, role)
-		SELECT i.workspace_id, $1, i.role FROM invites i WHERE lower(i.email) = lower($2)
-		ON CONFLICT DO NOTHING`, cl.Subject, cl.Email)
-	_, _ = tx.Exec(ctx, `DELETE FROM invites WHERE lower(email) = lower($1)`, cl.Email)
-
-	if res.DesktopPort != 0 {
-		// Desktop sign-in: hand the app a one-time code on its loopback
-		// address. It trades the code (plus the PKCE verifier) for a session.
-		code := randomToken(32)
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO desktop_codes (code_hash, user_id, id_token, challenge, provider, expires_at)
-			VALUES ($1,$2,$3,$4,$5, now() + interval '2 minutes')`,
-			hashToken(code), cl.Subject, idToken, res.DesktopChallenge, res.Provider); err != nil {
-			serverError(w, err)
-			return
-		}
-		if err := tx.Commit(ctx); err != nil {
-			serverError(w, err)
-			return
-		}
-		http.Redirect(w, r, fmt.Sprintf("http://127.0.0.1:%d/callback?code=%s", res.DesktopPort, code), http.StatusFound)
-		return
-	}
-
-	token := randomToken(32)
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO sessions (id_hash, user_id, id_token, user_agent, ip, provider, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6, now() + interval '12 hours')`,
-		hashToken(token), cl.Subject, idToken, r.UserAgent(), r.RemoteAddr, res.Provider); err != nil {
-		serverError(w, err)
-		return
-	}
-	if err := tx.Commit(ctx); err != nil {
-		serverError(w, err)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: token, Path: "/", HttpOnly: true,
-		Secure: strings.HasPrefix(s.cfg.FrontendURL, "https://"), SameSite: http.SameSiteLaxMode,
-		MaxAge: int((12 * time.Hour).Seconds()),
-	})
-	http.Redirect(w, r, s.cfg.FrontendURL+redirect, http.StatusFound)
 }
 
 // desktopTokenPrefix marks session tokens issued to the desktop app.
@@ -188,7 +68,7 @@ func (s *Server) desktopToken(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.db.Exec(ctx, `
 		INSERT INTO sessions (id_hash, user_id, id_token, user_agent, ip, provider, expires_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		hashToken(token), userID, idToken, "Speklo Desktop · "+r.UserAgent(), r.RemoteAddr, provider, expires); err != nil {
+		hashToken(token), userID, idToken, "Requara Desktop · "+r.UserAgent(), r.RemoteAddr, provider, expires); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -199,27 +79,35 @@ func (s *Server) desktopToken(w http.ResponseWriter, r *http.Request) {
 // It needs no sign-in, so the app can check before starting one.
 func (s *Server) version(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name": "speklo", "version": Version, "api": APIVersion,
-		"features": []string{"desktop-login", "auth-providers"},
+		"name": "requara", "version": Version, "api": APIVersion,
+		"features": []string{"desktop-login", "auth-providers", "email-login", "saml", "admin", "audit-log", "scim", "banner"},
 		"org":      s.cfg.OrgName,
 	})
 }
 
-// logout ends the Speklo session and returns the provider's logout URL.
+// logout ends the Requara session and returns the provider's logout URL.
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && strings.HasPrefix(bearer, desktopTokenPrefix) {
 		var idToken, provider string
-		_ = s.db.QueryRow(r.Context(), `DELETE FROM sessions WHERE id_hash = $1 RETURNING id_token, provider`, hashToken(bearer)).Scan(&idToken, &provider)
+		var uid string
+		_ = s.db.QueryRow(r.Context(), `DELETE FROM sessions WHERE id_hash = $1 RETURNING id_token, provider, user_id`, hashToken(bearer)).Scan(&idToken, &provider, &uid)
+		if uid != "" {
+			s.audit(r.Context(), r, nil, auditEntry{Action: "auth.signout", ActorKind: "user", ActorID: uid, Details: map[string]any{"client": "desktop"}})
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"logoutUrl": s.signin.LogoutURL(provider, idToken, s.cfg.FrontendURL+"/signin")})
 		return
 	}
-	if r.Header.Get("X-Requested-With") != "speklo" {
+	if r.Header.Get("X-Requested-With") != "requara" {
 		httpError(w, http.StatusForbidden, "Missing X-Requested-With header")
 		return
 	}
 	var idToken, provider string
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		_ = s.db.QueryRow(r.Context(), `DELETE FROM sessions WHERE id_hash = $1 RETURNING id_token, provider`, hashToken(c.Value)).Scan(&idToken, &provider)
+		var uid string
+		_ = s.db.QueryRow(r.Context(), `DELETE FROM sessions WHERE id_hash = $1 RETURNING id_token, provider, user_id`, hashToken(c.Value)).Scan(&idToken, &provider, &uid)
+		if uid != "" {
+			s.audit(r.Context(), r, nil, auditEntry{Action: "auth.signout", ActorKind: "user", ActorID: uid, Details: map[string]any{"client": "web"}})
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 	writeJSON(w, http.StatusOK, map[string]string{"logoutUrl": s.signin.LogoutURL(provider, idToken, s.cfg.FrontendURL+"/signin")})
@@ -253,6 +141,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		"canEdit": p.CanEdit(), "canPublish": s.canPublish(p),
 		"identityProvider": prov.Name,
 		"accountUrl":       prov.AccountURL,
+		"isAdmin":          p.IsAdmin,
 	})
 }
 
@@ -356,6 +245,7 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	s.audit(r.Context(), r, p, auditEntry{Action: "session.revoked", TargetType: "user", TargetID: p.UserID, TargetLabel: p.Email})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -452,6 +342,8 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	s.audit(r.Context(), r, principal(r), auditEntry{Action: "api_key.created", TargetType: "api_key", TargetID: k.ID, TargetLabel: k.Name,
+		Details: map[string]any{"scopes": k.Scopes}})
 	// The full key is returned exactly once; only its hash is stored.
 	writeJSON(w, http.StatusCreated, map[string]any{"key": key, "apiKey": k})
 }
@@ -472,6 +364,8 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 			serverError(w, err)
 			return
 		}
+	} else {
+		s.audit(r.Context(), r, p, auditEntry{Action: "api_key.revoked", TargetType: "api_key", TargetID: id})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -502,15 +396,16 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	rows, err := s.db.Query(r.Context(), `
-		SELECT u.name, u.email, m.role, false FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id=$1
+		SELECT u.id, u.name, u.email, m.role, false FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id=$1
 		UNION ALL
-		SELECT '', email, role, true FROM invites WHERE workspace_id=$1
-		ORDER BY 4, 1`, p.WorkspaceID)
+		SELECT '', '', email, role, true FROM invites WHERE workspace_id=$1
+		ORDER BY 5, 2`, p.WorkspaceID)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
 	type member struct {
+		UserID  string `json:"userId"`
 		Name    string `json:"name"`
 		Email   string `json:"email"`
 		Role    string `json:"role"`
@@ -538,8 +433,8 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
-	if !strings.Contains(in.Email, "@") || (in.Role != "editor" && in.Role != "viewer") {
-		httpError(w, http.StatusBadRequest, "Enter an email and pick Can edit or Can view")
+	if !strings.Contains(in.Email, "@") || !slices.Contains([]string{"owner", "editor", "viewer"}, in.Role) {
+		httpError(w, http.StatusBadRequest, "Enter an email and pick Owner, Can edit or Can view")
 		return
 	}
 	var wsName string
@@ -557,8 +452,8 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.jobs.InsertTx(r.Context(), tx, jobs.EmailArgs{
-		To: in.Email, Subject: p.Name + " invited you to " + wsName + " on Speklo",
-		Body: p.Name + " invited you to the " + wsName + " workspace on Speklo.\n\nSign in with your work account: " + s.cfg.FrontendURL + "/signin\n",
+		To: in.Email, Subject: p.Name + " invited you to " + wsName + " on Requara",
+		Body: p.Name + " invited you to the " + wsName + " workspace on Requara.\n\nSign in with your work account: " + s.cfg.FrontendURL + "/signin\n",
 	}, nil); err != nil {
 		serverError(w, err)
 		return
@@ -567,6 +462,8 @@ func (s *Server) invite(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	s.audit(r.Context(), r, p, auditEntry{Action: "invite.created", TargetType: "invite", TargetLabel: in.Email, WorkspaceID: p.WorkspaceID,
+		Details: map[string]any{"role": in.Role, "workspace": wsName}})
 	w.WriteHeader(http.StatusNoContent)
 }
 

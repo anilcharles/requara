@@ -1,13 +1,13 @@
-# Speklo desktop
+# Requara desktop
 
 A native app built with [GPUI](https://gpui.rs) through [gpui-kit](https://gpui-kit.com).
 It works on its own, with no account: build requests and send them from this computer.
-Signing in to a team's Speklo server is optional and adds the shared workspace.
+Signing in to a team's Requara server is optional and adds the shared workspace.
 
 ## What it does
 
 - **My requests (no account):** method, URL, headers and body; Send runs from this computer
-  (`src/local.rs`). Requests are saved in `<config dir>/Speklo/requests.json`.
+  (`src/local.rs`). Requests are saved in `<config dir>/Requara/requests.json`.
 - **Sign in to collaborate (optional):** enter the team's server; the app checks
   `GET /api/version` (refusing API levels it doesn't support, `SUPPORTED_API` in `src/api.rs`),
   lists the server's sign-in options from `GET /auth/providers` (Google, GitHub, Microsoft,
@@ -36,6 +36,6 @@ cargo install cargo-packager --locked
 cargo packager --release   # → target/packages/
 ```
 
-Icons come from `assets/icons/`, rendered from `branding/speklo-icon.svg` by
+Icons come from `assets/icons/`, rendered from `branding/requara-icon.svg` by
 `cargo run --manifest-path ../branding/icongen/Cargo.toml`.
 Code signing (Apple Developer ID, Windows) isn't configured yet.

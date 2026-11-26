@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anilcharles/speklo/server/api/internal/runner"
+	"github.com/anilcharles/requara/server/api/internal/runner"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )

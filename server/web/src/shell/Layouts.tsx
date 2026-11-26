@@ -1,13 +1,17 @@
-import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, FilterOutlined, PlusOutlined, SlidersOutlined } from "@ant-design/icons";
+import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, SlidersOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Input, Layout, Spin, theme, Tooltip } from "antd";
+import { Alert, Button, Dropdown, Input, Layout, Result, Spin, theme, Tooltip } from "antd";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { get, mocksPath, type Collection, type CollectionRequest, type Mock } from "../api";
+import { get, mocksPath, type Collection, type CollectionRequest, type Instance, type Mock } from "../api";
 import { Method } from "../components/bits";
+import { downloadCollection, ImportModal, NewCollectionModal, RenameCollectionModal, useDeleteCollection, useNewRequest } from "./CollectionActions";
 import ConsoleDock from "./Console";
-import Header from "./Header";
+import CookiesModal from "./Cookies";
+import Header, { CreateWorkspaceModal } from "./Header";
 import { useMe } from "./session";
+
+export const useInstance = () => useQuery({ queryKey: ["instance"], queryFn: () => get<Instance>("/api/instance"), staleTime: 60_000 });
 
 export function useCollections() {
   return useQuery({ queryKey: ["collections"], queryFn: () => get<Collection[]>("/api/collections"), staleTime: 30_000 });
@@ -25,14 +29,56 @@ export function AppLayout() {
     );
   }
   if (me.isError) return <Navigate to={`/signin?redirect=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
+  if (me.data && !me.data.workspaceId && !loc.pathname.startsWith("/admin")) return <NoWorkspace />;
   return (
     <Layout style={{ height: "100vh" }}>
+      <InstanceBanner />
       <Header />
       <Layout style={{ flex: 1, minHeight: 0 }}>
         <Outlet />
       </Layout>
       <ConsoleDock />
     </Layout>
+  );
+}
+
+// The admin's banner, on every page.
+function InstanceBanner() {
+  const inst = useInstance();
+  const b = inst.data?.banner;
+  if (!b?.enabled || !b.message) return null;
+  return <Alert banner type={b.level === "danger" ? "error" : b.level} message={b.message} style={{ flexShrink: 0 }} />;
+}
+
+// Someone who signed in but belongs to no workspace yet.
+function NoWorkspace() {
+  const me = useMe();
+  const inst = useInstance();
+  const nav = useNavigate();
+  const [creating, setCreating] = useState(false);
+  return (
+    <div style={{ height: "100vh", display: "grid", placeItems: "center" }}>
+      <Result
+        title="You're not in a workspace yet"
+        subTitle={`Ask a workspace owner on ${inst.data?.org ?? "this server"} to invite ${me.data?.email}${inst.data?.allowWorkspaceCreation ? ", or create your own" : ""}.`}
+        extra={[
+          inst.data?.allowWorkspaceCreation && (
+            <Button key="new" type="primary" onClick={() => setCreating(true)}>
+              Create a workspace
+            </Button>
+          ),
+          me.data?.isAdmin && (
+            <Button key="admin" onClick={() => nav("/admin/overview")}>
+              Admin console
+            </Button>
+          ),
+          <Button key="out" type="link" href="/signin" onClick={() => fetch("/auth/logout", { method: "POST", headers: { "X-Requested-With": "requara" } })}>
+            Sign out
+          </Button>,
+        ]}
+      />
+      <CreateWorkspaceModal open={creating} onClose={() => setCreating(false)} />
+    </div>
   );
 }
 
@@ -67,11 +113,43 @@ type SiderProps = {
 export function CollectionsSider({ onPick, isSelected }: SiderProps) {
   const { token } = theme.useToken();
   const nav = useNavigate();
+  const newRequest = useNewRequest();
+  const deleteCollection = useDeleteCollection();
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState<{ collectionId?: string | null } | null>(null);
+  const [renaming, setRenaming] = useState<Collection | null>(null);
+  const [cookies, setCookies] = useState(false);
+  const collectionMenu = (c: Collection) => ({
+    items: [
+      { key: "add", label: "Add request" },
+      { key: "ws", label: "Add WebSocket request" },
+      ...(c.kind === "collection" ? [{ key: "curl", label: "Import cURL here" }] : []),
+      { type: "divider" as const },
+      { key: "run", label: "Run collection" },
+      ...(c.kind !== "scratch" ? [{ key: "settings", label: "Variables, auth and scripts" }] : []),
+      { key: "export", label: "Export (Postman v2.1)" },
+      ...(c.kind === "collection"
+        ? [{ type: "divider" as const }, { key: "rename", label: "Rename" }, { key: "delete", label: "Delete", danger: true }]
+        : []),
+    ],
+    onClick: ({ key, domEvent }: { key: string; domEvent: { stopPropagation: () => void } }) => {
+      domEvent.stopPropagation();
+      const target = c.kind === "collection" ? { collectionId: c.id } : c.kind === "api" ? { apiId: c.id } : {};
+      if (key === "add") newRequest.mutate(target);
+      if (key === "ws") newRequest.mutate({ ...target, kind: "websocket" });
+      if (key === "curl") setImporting({ collectionId: c.id });
+      if (key === "run") nav(`/runner/${c.id}`);
+      if (key === "settings") nav(`/collections/${c.id}`);
+      if (key === "export") downloadCollection(c.id);
+      if (key === "rename") setRenaming(c);
+      if (key === "delete") deleteCollection(c);
+    },
+  });
   const loc = useLocation();
   const cols = useCollections();
   const mocks = useQuery({ queryKey: ["mocks"], queryFn: () => get<Mock[]>(mocksPath()), staleTime: 30_000 });
   const [filter, setFilter] = useState("");
-  const [open, setOpen] = useStored<Record<string, boolean>>("speklo.tree", {});
+  const [open, setOpen] = useStored<Record<string, boolean>>("requara.tree", {});
 
   const tree = useMemo(() => {
     const f = filter.toLowerCase();
@@ -111,7 +189,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
       key={key}
       ref={selected && depth === 2 ? selectedRow : undefined}
       onClick={onClick}
-      className="speklo-row"
+      className="requara-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -133,6 +211,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
     { path: "/history", icon: <ClockCircleOutlined />, label: "History" },
     { path: "/mocks", icon: <CodeOutlined />, label: "Mock servers", extra: running ? `${running} running` : "" },
     { path: "/environments", icon: <SlidersOutlined />, label: "Environments" },
+    { path: "/monitors", icon: <DashboardOutlined />, label: "Monitors" },
   ];
 
   return (
@@ -140,9 +219,30 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48, padding: "0 8px 0 16px" }}>
           <span style={{ fontWeight: 600 }}>Collections</span>
-          <Tooltip title="New API">
-            <Button type="text" icon={<PlusOutlined />} onClick={() => nav("/apis?new=1")} />
-          </Tooltip>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                { key: "request", label: "New request" },
+                { key: "ws", label: "New WebSocket request" },
+                { key: "collection", label: "New collection" },
+                { type: "divider" },
+                { key: "import", label: "Import Postman collection or cURL…" },
+                { key: "api", label: "New API from an OpenAPI spec…" },
+              ],
+              onClick: ({ key }) => {
+                if (key === "request") newRequest.mutate({});
+                if (key === "ws") newRequest.mutate({ kind: "websocket" });
+                if (key === "collection") setCreating(true);
+                if (key === "import") setImporting({});
+                if (key === "api") nav("/apis?new=1");
+              },
+            }}
+          >
+            <Tooltip title="New">
+              <Button type="text" icon={<PlusOutlined />} aria-label="New" />
+            </Tooltip>
+          </Dropdown>
         </div>
         <div style={{ padding: "0 12px 8px" }}>
           <Input size="small" allowClear prefix={<FilterOutlined style={{ color: token.colorTextTertiary }} />} placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -161,6 +261,11 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
                     {caret(co)}
                     <span style={{ flex: 1, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: c.status === "deprecated" ? token.colorTextTertiary : undefined }}>{c.name}</span>
                     <span style={{ fontSize: 11, color: token.colorTextTertiary, fontFamily: "JetBrains Mono, monospace" }}>{c.version}</span>
+                    <Dropdown trigger={["click"]} menu={collectionMenu(c)}>
+                      <span className="requara-more" role="button" aria-label={`${c.name} actions`} onClick={(e) => e.stopPropagation()} style={{ padding: "0 4px", color: token.colorTextTertiary, fontWeight: 700 }}>
+                        ···
+                      </span>
+                    </Dropdown>
                   </>,
                   () => toggle(ck, ci === 0),
                 )}
@@ -202,7 +307,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
           })}
           {!cols.isLoading && tree.length === 0 && (
             <div style={{ padding: 16, color: token.colorTextTertiary, fontSize: 13 }}>
-              <ApiOutlined /> {filter ? "Nothing matches." : "No APIs yet."}
+              <ApiOutlined /> {filter ? "Nothing matches." : "No collections yet. Use + to add a request, a collection or an import."}
             </div>
           )}
         </div>
@@ -220,8 +325,23 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
               loc.pathname.startsWith(f.path),
             ),
           )}
+          {row(
+            "cookies",
+            0,
+            <>
+              <span style={{ color: token.colorTextSecondary }}>
+                <GlobalOutlined />
+              </span>
+              <span style={{ flex: 1 }}>Cookies</span>
+            </>,
+            () => setCookies(true),
+          )}
         </div>
       </div>
+      <NewCollectionModal open={creating} onClose={() => setCreating(false)} />
+      <ImportModal open={!!importing} collectionId={importing?.collectionId} onClose={() => setImporting(null)} />
+      <RenameCollectionModal collection={renaming} onClose={() => setRenaming(null)} />
+      <CookiesModal open={cookies} onClose={() => setCookies(false)} />
     </Layout.Sider>
   );
 }

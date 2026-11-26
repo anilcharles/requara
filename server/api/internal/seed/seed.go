@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anilcharles/speklo/server/api/internal/bao"
-	"github.com/anilcharles/speklo/server/api/internal/spec"
+	"github.com/anilcharles/requara/server/api/internal/bao"
+	"github.com/anilcharles/requara/server/api/internal/spec"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,7 +33,7 @@ func Run(ctx context.Context, db *pgxpool.Pool, b *bao.Client, publicURL string,
 	}
 	defer tx.Rollback(ctx)
 	var ws string
-	if err := tx.QueryRow(ctx, `INSERT INTO workspaces (name, slug) VALUES ('Acme Payments','acme-payments') RETURNING id`).Scan(&ws); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO workspaces (name, slug, auto_join) VALUES ('Acme Payments','acme-payments', true) RETURNING id`).Scan(&ws); err != nil {
 		return err
 	}
 

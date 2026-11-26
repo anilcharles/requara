@@ -8,7 +8,7 @@ import { del, get, post, type ApiKey, type Session } from "../api";
 import { mono, PageHeader } from "../components/bits";
 import { timeAgo } from "../lib";
 import { initials } from "../shell/Header";
-import { useEnvironments, useMe, usePrefs } from "../shell/session";
+import { useMe, usePrefs } from "../shell/session";
 
 const SECTIONS = [
   { key: "profile", label: "Profile", icon: <UserOutlined /> },
@@ -61,7 +61,7 @@ function Profile() {
   if (!m) return null;
   return (
     <>
-      <PageHeader title="Profile" subtitle={`Your identity comes from ${m.identityProvider}. Change it there and Speklo picks up the changes at your next sign-in.`} />
+      <PageHeader title="Profile" subtitle={`Your identity comes from ${m.identityProvider}. Change it there and Requara picks up the changes at your next sign-in.`} />
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -162,7 +162,6 @@ function Row({ label, desc, children, last }: { label: string; desc?: string; ch
 
 function Preferences() {
   const { prefs, setPrefs } = usePrefs();
-  const envs = useEnvironments();
   const card = { styles: { body: { padding: 0 } } };
   return (
     <>
@@ -183,9 +182,6 @@ function Preferences() {
           </Row>
         </Card>
         <Card title="Requests" {...card}>
-          <Row label="Active environment" desc="Used for Send. Also switchable in the header.">
-            <Select value={envs.data?.activeId} style={{ width: 220 }} onChange={(v) => setPrefs({ activeEnvironmentId: v })} options={envs.data?.items.filter((e) => !e.isGlobal).map((e) => ({ value: e.id, label: e.name }))} />
-          </Row>
           <Row label="Send with ⌘↵" desc="Otherwise ⌘↵ inserts a new line in the body editor.">
             <Switch checked={prefs.sendWithCmdEnter !== false} onChange={(v) => setPrefs({ sendWithCmdEnter: v })} />
           </Row>
@@ -196,6 +192,7 @@ function Preferences() {
             <InputNumber value={prefs.defaultTimeoutMs ?? 30000} min={1000} max={300000} step={1000} addonAfter="ms" style={{ width: 160 }} onChange={(v) => v && setPrefs({ defaultTimeoutMs: v })} />
           </Row>
         </Card>
+        <AgentCard card={card} />
         <Card title="Email notifications" {...card}>
           <Row label="An API in my workspace is published">
             <Switch checked={prefs.notifyPublished !== false} onChange={(v) => setPrefs({ notifyPublished: v })} />
@@ -209,6 +206,66 @@ function Preferences() {
         </Card>
       </Space>
     </>
+  );
+}
+
+type Agent = { enabled: boolean; url: string; token: string };
+const AGENT_KEY = "requara.agent";
+function loadAgent(): Agent {
+  try {
+    return { enabled: false, url: "http://127.0.0.1:47321", token: "", ...JSON.parse(localStorage.getItem(AGENT_KEY) ?? "{}") };
+  } catch {
+    return { enabled: false, url: "http://127.0.0.1:47321", token: "" };
+  }
+}
+
+/** Pairs this browser with requara-agent, which sends My workspace's requests without CORS limits. */
+function AgentCard({ card }: { card: object }) {
+  const { message } = App.useApp();
+  const [a, setA] = useState<Agent>(loadAgent);
+  const [status, setStatus] = useState<"" | "ok" | "down">("");
+  const save = (p: Partial<Agent>) => {
+    const next = { ...a, ...p };
+    setA(next);
+    localStorage.setItem(AGENT_KEY, JSON.stringify(next));
+  };
+  const test = async () => {
+    try {
+      const r = await fetch(a.url.replace(/\/$/, "") + "/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Requara-Agent-Token": a.token },
+        body: JSON.stringify({ method: "GET", url: a.url.replace(/\/$/, "") + "/health", headers: {}, body: "" }),
+      });
+      if (r.status === 401) throw new Error("The token doesn't match. Copy it again from the agent's window.");
+      if (!r.ok) throw new Error(`The agent answered ${r.status}`);
+      setStatus("ok");
+      message.success("Connected to the Requara agent");
+    } catch (e) {
+      setStatus("down");
+      message.error((e as Error).message.includes("token") ? (e as Error).message : "Couldn't reach the agent. Is requara-agent running?");
+    }
+  };
+  return (
+    <Card title="Local agent" {...card}>
+      <Typography.Paragraph type="secondary" style={{ margin: "12px 0" }}>
+        In My workspace, requests are sent by this browser, so APIs that don't allow other websites (CORS), cookies and some headers don't work. Run <Typography.Text code>requara-agent</Typography.Text> on your
+        computer and paste the token it prints: Requara then sends My workspace's requests through it. Team workspaces send from your organization's server and don't need it.
+      </Typography.Paragraph>
+      <Row label="Send through the agent">
+        <Switch checked={a.enabled} disabled={!a.token} onChange={(enabled) => save({ enabled })} />
+      </Row>
+      <Row label="Agent address">
+        <Input value={a.url} onChange={(e) => save({ url: e.target.value })} style={{ width: 260, fontFamily: "JetBrains Mono, monospace" }} />
+      </Row>
+      <Row label="Pairing token" last>
+        <Space.Compact>
+          <Input.Password value={a.token} onChange={(e) => save({ token: e.target.value.trim() })} placeholder="ska_…" style={{ width: 260 }} />
+          <Button onClick={test} disabled={!a.token}>
+            {status === "ok" ? "Connected" : "Test"}
+          </Button>
+        </Space.Compact>
+      </Row>
+    </Card>
   );
 }
 
@@ -232,7 +289,7 @@ function Keys() {
 
   return (
     <>
-      <PageHeader title="API keys" subtitle="Personal keys call the Speklo API as you. Use them in CI and scripts." extra={<Button type="primary" onClick={() => setCreating(true)}>Create key</Button>} />
+      <PageHeader title="API keys" subtitle="Personal keys call the Requara API as you. Use them in CI and scripts." extra={<Button type="primary" onClick={() => setCreating(true)}>Create key</Button>} />
       <Alert type="info" showIcon message={<span>Keys inherit your roles and groups. Send them as <Typography.Text code>Authorization: Bearer rk_live_…</Typography.Text>. Revoked keys stop working immediately.</span>} style={{ marginBottom: 16 }} />
       <Table<ApiKey>
         rowKey="id"

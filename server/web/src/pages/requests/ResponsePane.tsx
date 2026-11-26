@@ -16,7 +16,7 @@ const phaseColors: Record<string, string> = {
   "Content download": "#1677FF",
 };
 
-export default function ResponsePane({ result, sending, onCancel }: { result: SendResult | null; sending: boolean; onCancel: () => void }) {
+export default function ResponsePane({ result, sending, onCancel, onSaveExample }: { result: SendResult | null; sending: boolean; onCancel: () => void; onSaveExample?: (r: SendResult) => void }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const [tab, setTab] = useState("body");
@@ -51,6 +51,11 @@ export default function ResponsePane({ result, sending, onCancel }: { result: Se
       >
         Copy
       </Button>
+      {onSaveExample && result.status > 0 && (
+        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onSaveExample(result)}>
+          Save as example
+        </Button>
+      )}
     </Space>
   ) : null;
 
@@ -118,6 +123,24 @@ export default function ResponsePane({ result, sending, onCancel }: { result: Se
     ) : (
       <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tests. Add them under Scripts → Post-response." />
     );
+  } else if (tab === "cookies") {
+    content = (
+      <div style={{ border: `1px solid ${token.colorSplit}`, borderRadius: 8, overflow: "hidden" }}>
+        {(result.cookies ?? []).map((c, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "200px 1fr 200px", padding: "9px 16px", borderTop: i ? `1px solid ${token.colorSplit}` : undefined, fontSize: 13 }}>
+            <span style={{ ...mono, color: token.colorTextSecondary }}>{c.name}</span>
+            <span style={{ ...mono, wordBreak: "break-all" }}>{c.value}</span>
+            <span style={{ color: token.colorTextTertiary }}>
+              {c.domain}
+              {c.path}
+            </span>
+          </div>
+        ))}
+        <div style={{ padding: "8px 16px", background: token.colorFillQuaternary, fontSize: 12, color: token.colorTextTertiary, borderTop: `1px solid ${token.colorSplit}` }}>
+          Kept and sent with later requests to this site. Manage them under Cookies in the sidebar.
+        </div>
+      </div>
+    );
   } else {
     const total = Math.max(result.durationMs, 1);
     content = (
@@ -162,6 +185,7 @@ export default function ResponsePane({ result, sending, onCancel }: { result: Se
             ),
           },
           { key: "timeline", label: "Timeline" },
+          ...(result?.cookies?.length ? [{ key: "cookies", label: <span>Cookies <Typography.Text type="secondary" style={{ fontSize: 12 }}>{result.cookies.length}</Typography.Text></span> }] : []),
         ]}
         style={{ marginBottom: 0 }}
       />

@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anilcharles/speklo/server/api/internal/sandbox"
+	"github.com/anilcharles/requara/server/api/internal/sandbox"
 	"github.com/google/uuid"
 )
 
@@ -35,13 +35,62 @@ type KV struct {
 }
 
 type Auth struct {
-	Type     string `json:"type"` // inherit | none | bearer | basic | apikey
+	Type     string `json:"type"` // inherit | none | bearer | basic | apikey | oauth2 | jwt | awsv4 | digest
 	Token    string `json:"token,omitempty"`
 	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`
 	Key      string `json:"key,omitempty"`
 	Value    string `json:"value,omitempty"`
 	In       string `json:"in,omitempty"` // header | query
+
+	// OAuth 2.0: a pasted token (grantType manual) or one fetched here.
+	GrantType    string `json:"grantType,omitempty"` // manual | client_credentials | password
+	TokenURL     string `json:"tokenUrl,omitempty"`
+	ClientID     string `json:"clientId,omitempty"`
+	ClientSecret string `json:"clientSecret,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	ClientAuth   string `json:"clientAuth,omitempty"` // header (Basic, default) | body
+
+	// AWS Signature v4.
+	AccessKey    string `json:"accessKey,omitempty"`
+	SecretKey    string `json:"secretKey,omitempty"`
+	SessionToken string `json:"sessionToken,omitempty"`
+	Region       string `json:"region,omitempty"`
+	Service      string `json:"service,omitempty"`
+
+	// JWT bearer, signed here.
+	Algorithm    string `json:"algorithm,omitempty"` // HS256 | HS384 | HS512
+	Secret       string `json:"secret,omitempty"`
+	Payload      string `json:"payload,omitempty"`      // JSON claims
+	HeaderPrefix string `json:"headerPrefix,omitempty"` // default "Bearer"
+}
+
+// FormField is one multipart/form-data field; files carry base64 data.
+type FormField struct {
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	Type        string `json:"type,omitempty"` // text | file
+	FileName    string `json:"fileName,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	Enabled     bool   `json:"enabled"`
+}
+
+// File is a binary request body (base64 data).
+type File struct {
+	Name        string `json:"name,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	Data        string `json:"data,omitempty"`
+}
+
+// Cookie is one stored cookie.
+type Cookie struct {
+	Domain   string     `json:"domain"`
+	Path     string     `json:"path"`
+	Name     string     `json:"name"`
+	Value    string     `json:"value"`
+	Expires  *time.Time `json:"expires,omitempty"`
+	Secure   bool       `json:"secure,omitempty"`
+	HTTPOnly bool       `json:"httpOnly,omitempty"`
 }
 
 type Settings struct {
@@ -56,16 +105,19 @@ func (s Settings) verify() bool { return s.VerifySSL == nil || *s.VerifySSL }
 func (s Settings) encode() bool { return s.EncodeURL == nil || *s.EncodeURL }
 
 type Spec struct {
-	Method     string   `json:"method"`
-	URL        string   `json:"url"`
-	Params     []KV     `json:"params"`
-	Headers    []KV     `json:"headers"`
-	BodyMode   string   `json:"bodyMode"` // none | json | raw | form-urlencoded | form-data | graphql
-	Body       string   `json:"body"`
-	Auth       Auth     `json:"auth"`
-	PreScript  string   `json:"preScript"`
-	PostScript string   `json:"postScript"`
-	Settings   Settings `json:"settings"`
+	Method     string      `json:"method"`
+	URL        string      `json:"url"`
+	Params     []KV        `json:"params"`
+	Headers    []KV        `json:"headers"`
+	BodyMode   string      `json:"bodyMode"` // none | json | raw | form-urlencoded | form-data | graphql | binary
+	Body       string      `json:"body"`
+	FormData   []FormField `json:"formData,omitempty"`
+	BodyFile   *File       `json:"bodyFile,omitempty"`
+	Cookies    []Cookie    `json:"cookies,omitempty"` // sent when they match the URL
+	Auth       Auth        `json:"auth"`
+	PreScript  string      `json:"preScript"`
+	PostScript string      `json:"postScript"`
+	Settings   Settings    `json:"settings"`
 }
 
 type Phase struct {
@@ -91,11 +143,15 @@ type Result struct {
 	Error       string               `json:"error,omitempty"`
 	URL         string               `json:"url"` // secrets redacted
 	Method      string               `json:"method"`
-	EnvChanges  map[string]string    `json:"-"` // variables scripts set; caller persists them
+	Cookies     []Cookie             `json:"cookies,omitempty"` // Set-Cookie the response sent
+	EnvChanges  map[string]string    `json:"-"`                 // variables scripts set; caller persists them
 }
 
 type Runner struct {
 	AllowPrivateNetwork bool
+	// Transport, when set, sends every request (the browser build uses the
+	// browser's fetch; tests can fake the network).
+	Transport http.RoundTripper
 }
 
 var varRe = regexp.MustCompile(`\{\{\s*([$A-Za-z0-9_.\-]+)\s*\}\}`)
@@ -144,19 +200,6 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 			req.Headers[Substitute(h.Key, vars)] = Substitute(h.Value, vars)
 		}
 	}
-	switch s.Auth.Type {
-	case "bearer":
-		req.Headers["Authorization"] = "Bearer " + Substitute(s.Auth.Token, vars)
-	case "basic":
-		cred := Substitute(s.Auth.Username, vars) + ":" + Substitute(s.Auth.Password, vars)
-		req.Headers["Authorization"] = "Basic " + base64.StdEncoding.EncodeToString([]byte(cred))
-	case "apikey":
-		if s.Auth.In == "query" {
-			q.Set(Substitute(s.Auth.Key, vars), Substitute(s.Auth.Value, vars))
-		} else {
-			req.Headers[Substitute(s.Auth.Key, vars)] = Substitute(s.Auth.Value, vars)
-		}
-	}
 	if s.Settings.encode() {
 		u.RawQuery = q.Encode()
 	} else {
@@ -194,6 +237,98 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 		}
 		res.Logs = append(res.Logs, out.Logs...)
 	}
+	// Auth goes on after the pre-request script, like Postman, so scripts
+	// can set the variables it uses (a token, a signature).
+	switch s.Auth.Type {
+	case "bearer":
+		req.Headers["Authorization"] = "Bearer " + Substitute(s.Auth.Token, vars)
+	case "basic":
+		cred := Substitute(s.Auth.Username, vars) + ":" + Substitute(s.Auth.Password, vars)
+		req.Headers["Authorization"] = "Basic " + base64.StdEncoding.EncodeToString([]byte(cred))
+	case "apikey":
+		if s.Auth.In == "query" {
+			if u, err := url.Parse(req.URL); err == nil {
+				qq := u.Query()
+				qq.Set(Substitute(s.Auth.Key, vars), Substitute(s.Auth.Value, vars))
+				u.RawQuery = qq.Encode()
+				req.URL = u.String()
+			}
+		} else {
+			req.Headers[Substitute(s.Auth.Key, vars)] = Substitute(s.Auth.Value, vars)
+		}
+	case "oauth2":
+		tok, err := r.oauth2Token(ctx, s.Auth, vars)
+		if err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		req.Headers["Authorization"] = "Bearer " + tok
+		secretValues = append(secretValues, tok)
+	case "jwt":
+		tok, err := signJWT(s.Auth.Algorithm, Substitute(s.Auth.Secret, vars), Substitute(s.Auth.Payload, vars))
+		if err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		if s.Auth.In == "query" {
+			if u, err := url.Parse(req.URL); err == nil {
+				qq := u.Query()
+				qq.Set(Substitute(s.Auth.Key, vars), tok)
+				u.RawQuery = qq.Encode()
+				req.URL = u.String()
+			}
+		} else {
+			prefix := s.Auth.HeaderPrefix
+			if prefix == "" {
+				prefix = "Bearer"
+			}
+			req.Headers["Authorization"] = strings.TrimSpace(prefix + " " + tok)
+		}
+		secretValues = append(secretValues, tok)
+	case "awsv4", "digest":
+		secretValues = append(secretValues, Substitute(s.Auth.SecretKey, vars), Substitute(s.Auth.Password, vars))
+	}
+	redact = redactor(secretValues)
+	if _, ok := headerLookup(req.Headers, "Cookie"); !ok {
+		if c := cookieHeader(s.Cookies, req.URL, time.Now()); c != "" {
+			req.Headers["Cookie"] = c
+		}
+	}
+
+	// Multipart and binary bodies are built from their parts.
+	rawBody := []byte(req.Body)
+	switch s.BodyMode {
+	case "form-data":
+		b, ct, err := multipartBody(s.FormData, vars)
+		if err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		rawBody = b
+		req.Headers["Content-Type"] = ct
+		req.Body = fmt.Sprintf("(multipart form, %d bytes)", len(b))
+	case "binary":
+		if s.BodyFile == nil || s.BodyFile.Data == "" {
+			rawBody = nil
+			req.Body = ""
+			break
+		}
+		b, err := base64.StdEncoding.DecodeString(s.BodyFile.Data)
+		if err != nil {
+			res.Error = "The body file couldn't be read"
+			return res
+		}
+		rawBody = b
+		if _, ok := headerLookup(req.Headers, "Content-Type"); !ok {
+			ct := s.BodyFile.ContentType
+			if ct == "" {
+				ct = "application/octet-stream"
+			}
+			req.Headers["Content-Type"] = ct
+		}
+		req.Body = fmt.Sprintf("(file %s, %d bytes)", s.BodyFile.Name, len(b))
+	}
+
 	res.URL = redact(req.URL)
 	for k, v := range req.Headers {
 		res.ReqHeaders = append(res.ReqHeaders, KV{Key: k, Value: redact(v), Enabled: true})
@@ -214,25 +349,54 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader(req.Body))
+	build := func() (*http.Request, error) {
+		hr, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bytesReader(rawBody))
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range req.Headers {
+			hr.Header.Set(k, v)
+		}
+		if hr.Header.Get("User-Agent") == "" {
+			hr.Header.Set("User-Agent", "Requara/1.0")
+		}
+		if s.Auth.Type == "awsv4" {
+			signAWS(hr, rawBody, Substitute(s.Auth.AccessKey, vars), Substitute(s.Auth.SecretKey, vars),
+				Substitute(s.Auth.SessionToken, vars), Substitute(s.Auth.Region, vars), Substitute(s.Auth.Service, vars), time.Now())
+		}
+		return hr, nil
+	}
+	httpReq, err := build()
 	if err != nil {
 		res.Error = err.Error()
 		return res
 	}
-	for k, v := range req.Headers {
-		httpReq.Header.Set(k, v)
-	}
-	if httpReq.Header.Get("User-Agent") == "" {
-		httpReq.Header.Set("User-Agent", "Speklo/1.0")
-	}
 	t := &tracer{}
 	httpReq = httpReq.WithContext(httptrace.WithClientTrace(ctx, t.trace()))
-	client := &http.Client{Transport: r.transport(s.Settings.verify())}
+	client := &http.Client{Transport: r.roundTripper(s.Settings.verify())}
 	if !s.Settings.follow() {
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	t.start = time.Now()
 	resp, err := client.Do(httpReq)
+	// HTTP Digest: answer the server's challenge and send again.
+	if err == nil && s.Auth.Type == "digest" && resp.StatusCode == http.StatusUnauthorized {
+		challenge := resp.Header.Get("WWW-Authenticate")
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		authz, derr := digestAuthorization(challenge, req.Method, httpReq.URL.RequestURI(), Substitute(s.Auth.Username, vars), Substitute(s.Auth.Password, vars))
+		if derr != nil {
+			res.Error = derr.Error()
+			return res
+		}
+		retry, berr := build()
+		if berr != nil {
+			res.Error = berr.Error()
+			return res
+		}
+		retry.Header.Set("Authorization", authz)
+		resp, err = client.Do(retry.WithContext(httptrace.WithClientTrace(ctx, t.trace())))
+	}
 	if err != nil {
 		res.DurationMs = time.Since(t.start).Milliseconds()
 		res.Error = friendlyErr(err, timeout)
@@ -249,6 +413,7 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 		body, res.Truncated = body[:maxBody], true
 	}
 	res.Status, res.StatusText = resp.StatusCode, http.StatusText(resp.StatusCode)
+	res.Cookies = responseCookies(resp)
 	res.DurationMs = end.Sub(t.start).Milliseconds()
 	res.SizeBytes = len(body)
 	res.Body = string(body)
@@ -288,11 +453,11 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 	return res
 }
 
-func bodyReader(s string) io.Reader {
-	if s == "" {
+func bytesReader(b []byte) io.Reader {
+	if len(b) == 0 {
 		return nil
 	}
-	return bytes.NewBufferString(s)
+	return bytes.NewReader(b)
 }
 
 func headerLookup(h map[string]string, name string) (string, bool) {
@@ -354,13 +519,20 @@ func friendlyErr(err error, timeout time.Duration) string {
 type blockedErr struct{ ip net.IP }
 
 func (e *blockedErr) Error() string {
-	return fmt.Sprintf("Blocked: %s is a private or internal address. Speklo only calls public hosts.", e.ip)
+	return fmt.Sprintf("Blocked: %s is a private or internal address. Requara only calls public hosts.", e.ip)
 }
 
 func blocked(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsUnspecified() || ip.IsMulticast() || ip.Equal(net.IPv4bcast) ||
 		ip.Equal(net.ParseIP("169.254.169.254")) // cloud metadata
+}
+
+func (r *Runner) roundTripper(verify bool) http.RoundTripper {
+	if r.Transport != nil {
+		return r.Transport
+	}
+	return r.transport(verify)
 }
 
 func (r *Runner) transport(verify bool) *http.Transport {
@@ -439,6 +611,10 @@ func (t *tracer) phases(end time.Time) []Phase {
 	add("Request sent", sendFrom, t.wrote)
 	add("Waiting (TTFB)", t.wrote, t.firstByte)
 	add("Content download", t.firstByte, end)
+	// Without connection-level timings (the browser's fetch), show the total.
+	if len(out) <= 1 && !end.Before(t.start) {
+		out = []Phase{{Name: "Total", StartMs: 0, Ms: ms(t.start, end)}}
+	}
 	return out
 }
 
@@ -454,7 +630,7 @@ func (r *Runner) Fetch(ctx context.Context, rawURL string, limit int64) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	resp, err := (&http.Client{Transport: r.transport(true)}).Do(req)
+	resp, err := (&http.Client{Transport: r.roundTripper(true)}).Do(req)
 	if err != nil {
 		return nil, errors.New(friendlyErr(err, 20*time.Second))
 	}

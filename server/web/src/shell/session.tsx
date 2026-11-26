@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App as AntApp, ConfigProvider, theme } from "antd";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { get, patch, type Environment, type Me, type Prefs } from "../api";
+import { get, patch, personalActive, type Environment, type Me, type Prefs } from "../api";
+import { warmCore } from "../personal/core";
 
 type PrefsCtx = { prefs: Prefs; isDark: boolean; setPrefs: (p: Partial<Prefs>) => void };
 const Ctx = createContext<PrefsCtx>({ prefs: {}, isDark: false, setPrefs: () => {} });
@@ -36,6 +37,11 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const onSignIn = location.pathname.startsWith("/signin");
   const me = useMe(!onSignIn);
+  useEffect(() => {
+    // The personal workspace's engine downloads once; start it early.
+    if (personalActive()) (window.requestIdleCallback ?? setTimeout)(() => warmCore());
+  }, [me.data?.workspaceId]);
+
   const systemDark = useSystemDark();
   const prefs = me.data?.prefs ?? {};
   const mode = prefs.theme ?? "system";

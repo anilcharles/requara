@@ -5,10 +5,12 @@ package config
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
-	"github.com/anilcharles/speklo/server/api/internal/bao"
+	"github.com/anilcharles/requara/server/api/internal/bao"
 )
 
 type Config struct {
@@ -18,6 +20,7 @@ type Config struct {
 	PublicURL           string // where mock servers are reachable
 	AllowPrivateNetwork bool   // let the request runner call localhost/private IPs (dev only)
 	OrgName             string // organization shown on the sign-in page
+	StaticDir           string // built web UI to serve at / (the Docker image sets it); empty = API only
 
 	DatabaseURL string
 
@@ -32,6 +35,13 @@ type Config struct {
 	// identity provider (exact name, or the last segment of a group path).
 	AdminGroups     []string // become workspace owners
 	PublisherGroups []string // may publish API versions
+
+	// Instance admins: lower-cased emails from REQUARA_ADMIN_EMAILS,
+	// REQUARA_ADMIN_EMAILS_FILE and OpenBao (see admins.go).
+	Admins       []string
+	AdminSources []AdminSource
+
+	AuditRetentionDays int // 0 = keep forever
 
 	SessionKey []byte
 
@@ -55,20 +65,21 @@ func readFile(path string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// Load signs in to OpenBao with AppRole and reads secret/speklo/<env>/*.
+// Load signs in to OpenBao with AppRole and reads secret/requara/<env>/*.
 func Load(ctx context.Context) (*Config, *bao.Client, error) {
 	c := &Config{
-		Env:         env("SPEKLO_ENV", "dev"),
-		Addr:        env("SPEKLO_ADDR", ":8080"),
-		FrontendURL: strings.TrimRight(env("SPEKLO_FRONTEND_URL", "http://localhost:5173"), "/"),
-		PublicURL:   strings.TrimRight(env("SPEKLO_PUBLIC_URL", "http://localhost:8080"), "/"),
-		OrgName:     env("SPEKLO_ORG_NAME", "Acme Payments"),
+		Env:         env("REQUARA_ENV", "dev"),
+		Addr:        env("REQUARA_ADDR", ":8080"),
+		FrontendURL: strings.TrimRight(env("REQUARA_FRONTEND_URL", "http://localhost:5173"), "/"),
+		PublicURL:   strings.TrimRight(env("REQUARA_PUBLIC_URL", "http://localhost:8080"), "/"),
+		OrgName:     env("REQUARA_ORG_NAME", "Requara"),
+		StaticDir:   os.Getenv("REQUARA_STATIC_DIR"),
 	}
-	// SPEKLO_SSO_DOMAINS is the older name.
-	for _, d := range list(env("SPEKLO_ALLOWED_DOMAINS", env("SPEKLO_SSO_DOMAINS", "*"))) {
+	// REQUARA_SSO_DOMAINS is the older name.
+	for _, d := range list(env("REQUARA_ALLOWED_DOMAINS", env("REQUARA_SSO_DOMAINS", "*"))) {
 		c.AllowedDomains = append(c.AllowedDomains, strings.ToLower(d))
 	}
-	switch os.Getenv("SPEKLO_ALLOW_PRIVATE_NETWORK") {
+	switch os.Getenv("REQUARA_ALLOW_PRIVATE_NETWORK") {
 	case "true":
 		c.AllowPrivateNetwork = true
 	case "":
@@ -93,7 +104,7 @@ func Load(ctx context.Context) (*Config, *bao.Client, error) {
 		return nil, nil, err
 	}
 
-	read := func(name string) (map[string]string, error) { return b.KV(ctx, "speklo/"+c.Env+"/"+name) }
+	read := func(name string) (map[string]string, error) { return b.KV(ctx, "requara/"+c.Env+"/"+name) }
 	pg, err := read("postgres")
 	if err != nil {
 		return nil, nil, err
@@ -120,6 +131,26 @@ func Load(ctx context.Context) (*Config, *bao.Client, error) {
 	}
 	if err := c.loadProviders(read); err != nil {
 		return nil, nil, err
+	}
+	admins, _ := read("admins") // optional
+	if err := c.loadAdmins(os.Getenv, os.ReadFile, admins, "secret/requara/"+c.Env+"/admins"); err != nil {
+		return nil, nil, err
+	}
+	if len(c.Admins) == 0 {
+		slog.Warn("no instance admins: set REQUARA_ADMIN_EMAILS or REQUARA_ADMIN_EMAILS_FILE to manage users, workspaces and the audit log")
+	}
+	c.AuditRetentionDays = 365
+	if v := os.Getenv("REQUARA_AUDIT_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, nil, fmt.Errorf("REQUARA_AUDIT_RETENTION_DAYS must be a number of days (0 = forever)")
+		}
+		c.AuditRetentionDays = n
+	}
+	for _, p := range c.Providers {
+		if p.Type == "email" && c.SMTPAddr == "" {
+			return nil, nil, fmt.Errorf("the email sign-in provider needs SMTP: set addr in OpenBao secret/requara/%s/smtp", c.Env)
+		}
 	}
 	return c, b, nil
 }

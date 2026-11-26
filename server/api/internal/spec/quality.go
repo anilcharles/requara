@@ -82,7 +82,7 @@ func Diff(published, draft *openapi3.T) ([]Change, error) {
 	var out []Change
 	for _, c := range changes {
 		if c.GetOperation() == "" && strings.Contains(c.GetId(), "version") {
-			continue // "major version did not increase": Speklo suggests the version itself
+			continue // "major version did not increase": Requara suggests the version itself
 		}
 		text := c.GetUncolorizedText(loc)
 		kind := "changed"

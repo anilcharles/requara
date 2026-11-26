@@ -8,8 +8,8 @@ export type ConsoleEntry = {
   at: number; // ms since epoch
   name: string; // request name
   env: string;
-  result?: SendResult; // absent when Speklo itself refused the send
-  error?: string; // Speklo-side failure (validation, auth, server)
+  result?: SendResult; // absent when Requara itself refused the send
+  error?: string; // Requara-side failure (validation, auth, server)
   method: string;
   url: string;
 };

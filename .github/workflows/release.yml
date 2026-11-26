@@ -1,6 +1,6 @@
 name: Release
 
-# Runs on the self-hosted runner (label "speklo"), except the desktop
+# Runs on the self-hosted runner (label "speklo"; rename the label on GitHub to change it), except the desktop
 # installers a Mac can't build (Intel Mac, Windows, Linux), which use
 # GitHub-hosted runners.
 #
@@ -8,8 +8,8 @@ name: Release
 # product (server, desktop). Merging one creates that product's tag and
 # GitHub Release, and the jobs below build and attach what it ships:
 #
-#   server-vX.Y.Z  → ghcr.io/<owner>/<repo>/api and /web images (same tag)
-#                    + speklo-selfhost-X.Y.Z.tar.gz (compose bundle) on the Release
+#   server-vX.Y.Z  → ghcr.io/<owner>/<repo>/server image (Go serves API + UI)
+#                    + requara-selfhost-X.Y.Z.tar.gz (compose bundle) on the Release
 #   desktop-vX.Y.Z → installers for macOS, Windows and Linux on the Release
 on:
   push:
@@ -45,9 +45,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        image: [api, web]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
@@ -59,7 +56,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: name
-        run: echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+        run: echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')/server" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
@@ -69,17 +66,17 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.server_version }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=Speklo ${{ matrix.image }}
+            org.opencontainers.image.title=Requara server
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: server/${{ matrix.image }}
+          context: server
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: VERSION=${{ needs.release-please.outputs.server_version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
 
   server-bundle:
     needs: [release-please, server-images]
@@ -95,14 +92,14 @@ jobs:
         run: |
           prefix="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           out="$RUNNER_TEMP/bundle" && rm -rf "$out" && mkdir -p "$out"
-          cp -R server/deploy "$out/speklo"
-          perl -pi -e "s#ghcr.io/OWNER/REPO#${prefix}#g" "$out/speklo/docker-compose.yml"
-          perl -pi -e "s#^SPEKLO_VERSION=.*#SPEKLO_VERSION=${VERSION}#" "$out/speklo/.env.example"
-          tar czf "server/speklo-selfhost-${VERSION}.tar.gz" -C "$out" speklo
+          cp -R server/deploy "$out/requara"
+          perl -pi -e "s#ghcr.io/OWNER/REPO#${prefix}#g" "$out/requara/docker-compose.yml"
+          perl -pi -e "s#^REQUARA_VERSION=.*#REQUARA_VERSION=${VERSION}#" "$out/requara/.env.example"
+          tar czf "server/requara-selfhost-${VERSION}.tar.gz" -C "$out" requara
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ needs.release-please.outputs.server_tag }}" server/speklo-selfhost-*.tar.gz --clobber
+        run: gh release upload "${{ needs.release-please.outputs.server_tag }}" server/requara-selfhost-*.tar.gz --clobber
 
   # ---------- desktop: installers on the release ----------
   desktop:
