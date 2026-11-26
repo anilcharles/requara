@@ -122,7 +122,7 @@ jobs:
         with: { ref: "${{ needs.release-please.outputs.desktop_tag }}" }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: desktop }
+        with: { workspaces: desktop, cache-bin: "false" }
       - name: Linux libraries for GPUI and the keychain
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libdbus-1-dev
