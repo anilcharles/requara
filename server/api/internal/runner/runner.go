@@ -43,13 +43,20 @@ type Auth struct {
 	Value    string `json:"value,omitempty"`
 	In       string `json:"in,omitempty"` // header | query
 
-	// OAuth 2.0: a pasted token (grantType manual) or one fetched here.
-	GrantType    string `json:"grantType,omitempty"` // manual | client_credentials | password
+	// OAuth 2.0: a pasted token (grantType manual), one fetched here, or one
+	// got by signing in in the browser (authorization_code, with PKCE).
+	GrantType    string `json:"grantType,omitempty"` // manual | client_credentials | password | authorization_code
+	AuthURL      string `json:"authUrl,omitempty"`   // authorization_code: where people sign in
 	TokenURL     string `json:"tokenUrl,omitempty"`
 	ClientID     string `json:"clientId,omitempty"`
 	ClientSecret string `json:"clientSecret,omitempty"`
 	Scope        string `json:"scope,omitempty"`
 	ClientAuth   string `json:"clientAuth,omitempty"` // header (Basic, default) | body
+	PKCE         string `json:"pkce,omitempty"`       // authorization_code: S256 (default) | plain | off
+	Audience     string `json:"audience,omitempty"`   // optional extra authorize parameter (Auth0, Okta)
+	// authorization_code: the token got by signing in. Token holds the access token.
+	RefreshToken string `json:"refreshToken,omitempty"`
+	ExpiresAt    int64  `json:"expiresAt,omitempty"` // unix seconds; 0 = unknown
 
 	// AWS Signature v4.
 	AccessKey    string `json:"accessKey,omitempty"`

@@ -679,6 +679,19 @@ const routes: Route[] = [
     },
   ],
 
+  // --- OAuth 2.0 authorization code (see server/api/internal/api/oauth2.go) ---
+  [
+    "POST",
+    /^\/api\/oauth2\/(authorize|token)$/,
+    (c, step) => {
+      const b = c.body ?? {};
+      const collectionVars = b.collectionId ? settingsFor(b.collectionId)?.variables ?? [] : [];
+      const { vars } = resolveEnv(b.environmentId ?? "", collectionVars);
+      const input = { auth: b.auth, vars, redirectUri: b.redirectUri, state: b.state, codeVerifier: b.codeVerifier, code: b.code, agent: agentSettings() };
+      return core(step === "authorize" ? "oauth2Authorize" : "oauth2Token", input);
+    },
+  ],
+
   // --- collections ---
   [
     "POST",

@@ -320,7 +320,7 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
   if (tab === "params") panel = <KeyValueTable rows={draft.params} onChange={(params) => set({ params })} readOnly={readOnly} />;
   else if (tab === "headers") panel = <KeyValueTable rows={draft.headers} onChange={(headers) => set({ headers })} readOnly={readOnly} />;
   else if (tab === "auth") {
-    panel = <AuthEditor auth={draft.auth} onChange={(auth) => set({ auth })} inheritLabel={draft.apiId || draft.collectionId ? "Inherit from collection" : "Inherit (Bearer {{secret_key}} when the environment has it)"} readOnly={!!readOnly} />;
+    panel = <AuthEditor auth={draft.auth} onChange={(auth) => set({ auth })} inheritLabel={draft.apiId || draft.collectionId ? "Inherit from collection" : "Inherit (Bearer {{secret_key}} when the environment has it)"} readOnly={!!readOnly} collectionId={draft.collectionId ?? draft.apiId} />;
   } else if (tab === "body") {
     panel = (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>

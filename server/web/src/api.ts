@@ -244,12 +244,17 @@ export type Auth = {
   key?: string;
   value?: string;
   in?: "header" | "query";
-  grantType?: "manual" | "client_credentials" | "password";
+  grantType?: "manual" | "client_credentials" | "password" | "authorization_code";
+  authUrl?: string;
   tokenUrl?: string;
   clientId?: string;
   clientSecret?: string;
   scope?: string;
   clientAuth?: "header" | "body";
+  pkce?: "S256" | "plain" | "off";
+  audience?: string;
+  refreshToken?: string;
+  expiresAt?: number;
   accessKey?: string;
   secretKey?: string;
   sessionToken?: string;

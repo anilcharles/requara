@@ -77,7 +77,7 @@ export default function CollectionSettings() {
             children: (
               <>
                 <Typography.Paragraph type="secondary">Requests set to "Inherit from collection" use this.</Typography.Paragraph>
-                <AuthEditor auth={draft.auth} onChange={(auth) => set({ auth })} inheritLabel="None set (requests use their own)" readOnly={!!readOnly} />
+                <AuthEditor auth={draft.auth} onChange={(auth) => set({ auth })} inheritLabel="None set (requests use their own)" readOnly={!!readOnly} collectionId={draft.id} />
               </>
             ),
           },

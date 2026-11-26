@@ -1,6 +1,8 @@
-import { Input, Segmented, Select, Space, Typography } from "antd";
+import { Button, Input, Segmented, Select, Space, Typography, message } from "antd";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Auth } from "../api";
 import { mono } from "./bits";
+import { getAuthorizationCodeToken, redirectUri } from "./oauth2";
 
 const TYPES: { value: Auth["type"]; label: string }[] = [
   { value: "inherit", label: "Inherit from collection" },
@@ -15,7 +17,7 @@ const TYPES: { value: Auth["type"]; label: string }[] = [
 ];
 
 /** Every auth type Requara sends, for a request or a whole collection. */
-export default function AuthEditor({ auth: a, onChange, inheritLabel, readOnly }: { auth: Auth; onChange: (a: Auth) => void; inheritLabel?: string; readOnly?: boolean }) {
+export default function AuthEditor({ auth: a, onChange, inheritLabel, readOnly, collectionId }: { auth: Auth; onChange: (a: Auth) => void; inheritLabel?: string; readOnly?: boolean; collectionId?: string | null }) {
   const set = (p: Partial<Auth>) => onChange({ ...a, ...p });
   const field = (label: string, key: keyof Auth, placeholder?: string, secret = false) => {
     const Comp = secret ? Input.Password : Input;
@@ -64,11 +66,14 @@ export default function AuthEditor({ auth: a, onChange, inheritLabel, readOnly }
                 { value: "manual", label: "Paste a token" },
                 { value: "client_credentials", label: "Client credentials" },
                 { value: "password", label: "Password" },
+                { value: "authorization_code", label: "Authorization code" },
               ]}
             />
           </div>
           {(a.grantType ?? "manual") === "manual" ? (
             field("Access token", "token", "{{access_token}}", true)
+          ) : a.grantType === "authorization_code" ? (
+            <AuthorizationCode auth={a} set={set} field={field} readOnly={readOnly} collectionId={collectionId} />
           ) : (
             <>
               {field("Access token URL", "tokenUrl", "https://auth.example.com/oauth/token")}
@@ -81,15 +86,7 @@ export default function AuthEditor({ auth: a, onChange, inheritLabel, readOnly }
                 </>
               )}
               {field("Scope", "scope", "read write")}
-              <Segmented
-                value={a.clientAuth ?? "header"}
-                disabled={readOnly}
-                onChange={(v) => set({ clientAuth: v as "header" | "body" })}
-                options={[
-                  { value: "header", label: "Client credentials in Basic header" },
-                  { value: "body", label: "In the request body" },
-                ]}
-              />
+              <ClientAuth auth={a} set={set} readOnly={readOnly} />
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>
                 Requara fetches the token before sending and reuses it until it expires.
               </Typography.Text>
@@ -132,5 +129,91 @@ export default function AuthEditor({ auth: a, onChange, inheritLabel, readOnly }
         </Typography.Text>
       )}
     </Space>
+  );
+}
+
+type Field = (label: string, key: keyof Auth, placeholder?: string, secret?: boolean) => ReactNode;
+
+function ClientAuth({ auth: a, set, readOnly }: { auth: Auth; set: (p: Partial<Auth>) => void; readOnly?: boolean }) {
+  return (
+    <Segmented
+      value={a.clientAuth ?? "header"}
+      disabled={readOnly}
+      onChange={(v) => set({ clientAuth: v as "header" | "body" })}
+      options={[
+        { value: "header", label: "Client credentials in Basic header" },
+        { value: "body", label: "In the request body" },
+      ]}
+    />
+  );
+}
+
+/** Authorization code (with PKCE): sign in in a popup, keep the tokens on the request. */
+function AuthorizationCode({ auth: a, set, field, readOnly, collectionId }: { auth: Auth; set: (p: Partial<Auth>) => void; field: Field; readOnly?: boolean; collectionId?: string | null }) {
+  const [busy, setBusy] = useState(false);
+  const abort = useRef<AbortController | null>(null);
+  useEffect(() => () => abort.current?.abort(), []);
+  const signIn = async () => {
+    abort.current = new AbortController();
+    setBusy(true);
+    try {
+      const t = await getAuthorizationCodeToken(a, collectionId, abort.current.signal);
+      set({ token: t.accessToken, refreshToken: t.refreshToken ?? "", expiresAt: t.expiresAt ?? 0 });
+      message.success("Signed in. The token is saved with this request's auth.");
+    } catch (e) {
+      if (!abort.current?.signal.aborted) message.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const expires = a.expiresAt ? new Date(a.expiresAt * 1000) : null;
+  const expired = !!expires && expires.getTime() < Date.now();
+  return (
+    <>
+      {field("Authorization URL", "authUrl", "https://auth.example.com/authorize")}
+      {field("Access token URL", "tokenUrl", "https://auth.example.com/oauth/token")}
+      {field("Client ID", "clientId")}
+      {field("Client secret (leave empty for public clients)", "clientSecret", "", true)}
+      {field("Scope", "scope", "openid profile offline_access")}
+      {field("Audience (optional)", "audience", "https://api.example.com")}
+      <div>
+        <div style={{ marginBottom: 6 }}>PKCE</div>
+        <Segmented
+          value={a.pkce ?? "S256"}
+          disabled={readOnly}
+          onChange={(v) => set({ pkce: v as Auth["pkce"] })}
+          options={[
+            { value: "S256", label: "SHA-256" },
+            { value: "plain", label: "Plain" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+      </div>
+      {a.clientSecret ? <ClientAuth auth={a} set={set} readOnly={readOnly} /> : null}
+      <div>
+        <div style={{ marginBottom: 6 }}>Redirect URI (register it with the identity provider)</div>
+        <Typography.Text code copyable style={mono}>
+          {redirectUri()}
+        </Typography.Text>
+      </div>
+      <Space wrap>
+        <Button type="primary" loading={busy} disabled={readOnly} onClick={signIn}>
+          Get new access token
+        </Button>
+        {busy && <Button onClick={() => abort.current?.abort()}>Cancel</Button>}
+        {a.token && !busy && (
+          <Button disabled={readOnly} onClick={() => set({ token: "", refreshToken: "", expiresAt: 0 })}>
+            Clear token
+          </Button>
+        )}
+      </Space>
+      <Typography.Text type={expired && !a.refreshToken ? "danger" : "secondary"} style={{ fontSize: 13 }}>
+        {!a.token
+          ? "No token yet. Sign in to get one."
+          : expires
+            ? `${expired ? "Expired" : "Expires"} ${expires.toLocaleString()}${a.refreshToken ? ". Requara refreshes it when it expires." : "."}`
+            : "Signed in. The provider didn't say when the token expires."}
+      </Typography.Text>
+    </>
   );
 }

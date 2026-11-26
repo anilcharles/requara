@@ -182,6 +182,8 @@ func (s *Server) Routes() http.Handler {
 			r.Put("/requests/{id}", s.updateRequest)
 			r.Delete("/requests/{id}", s.deleteRequest)
 			r.Post("/requests/{id}/send", s.sendRequest)
+			r.Post("/oauth2/authorize", s.oauth2Authorize)
+			r.Post("/oauth2/token", s.oauth2Token)
 
 			r.Get("/environments", s.listEnvironments)
 			r.Post("/environments", s.createEnvironment)

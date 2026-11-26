@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Requara: signing in</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; color: #1f2328; background: #fff; }
+      @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } }
+    </style>
+  </head>
+  <body>
+    <p id="msg">Finishing sign-in…</p>
+    <script>
+      // The identity provider sends people here after OAuth 2.0 sign-in
+      // (redirect URI <origin>/oauth2/callback.html). Hand what it sent to the
+      // Requara tab that opened this popup, then close. BroadcastChannel also
+      // works when the provider's Cross-Origin-Opener-Policy cut window.opener.
+      (function () {
+        var params = {};
+        new URLSearchParams(location.search).forEach(function (v, k) { params[k] = v; });
+        new URLSearchParams(location.hash.slice(1)).forEach(function (v, k) { params[k] = v; });
+        var data = { source: "requara-oauth2", params: params };
+        try { new BroadcastChannel("requara-oauth2").postMessage(data); } catch (e) { /* old browser */ }
+        try { if (window.opener) window.opener.postMessage(data, location.origin); } catch (e) { /* cut off */ }
+        // Keep the code out of this window's history.
+        history.replaceState(null, "", location.pathname);
+        document.getElementById("msg").textContent = params.error
+          ? "Sign-in failed: " + (params.error_description || params.error) + ". You can close this window."
+          : "Signed in. You can close this window and go back to Requara.";
+        setTimeout(function () { window.close(); }, 300);
+      })();
+    </script>
+  </body>
+</html>

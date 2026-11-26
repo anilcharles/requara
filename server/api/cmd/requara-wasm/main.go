@@ -51,6 +51,8 @@ var ops = map[string]handler{
 	"parsePostman":    parsePostman,
 	"exportPostman":   exportPostman,
 	"parseCurl":       parseCurl,
+	"oauth2Authorize": oauth2Authorize,
+	"oauth2Token":     oauth2Token,
 }
 
 func main() {
@@ -477,6 +479,35 @@ func send(ctx context.Context, in json.RawMessage) (any, error) {
 		res.EnvChanges = map[string]string{}
 	}
 	return map[string]any{"result": res, "envChanges": res.EnvChanges, "mockCalls": calls}, nil
+}
+
+type oauth2In struct {
+	Auth         runner.Auth
+	Vars         map[string]string
+	RedirectURI  string
+	State        string
+	CodeVerifier string
+	Code         string
+	Agent        *agent
+}
+
+func oauth2Authorize(_ context.Context, in json.RawMessage) (any, error) {
+	x, err := decode[oauth2In](in)
+	if err != nil {
+		return nil, err
+	}
+	u, err := runner.AuthorizeURL(x.Auth, x.Vars, x.RedirectURI, x.State, x.CodeVerifier)
+	return map[string]string{"url": u}, err
+}
+
+// oauth2Token trades the code with the browser's fetch (or the local agent).
+func oauth2Token(ctx context.Context, in json.RawMessage) (any, error) {
+	x, err := decode[oauth2In](in)
+	if err != nil {
+		return nil, err
+	}
+	r := &runner.Runner{Transport: transport{mocks: map[string]localMock{}, calls: &[]mockCall{}, agent: x.Agent}}
+	return r.ExchangeCode(ctx, x.Auth, x.Vars, x.Code, x.CodeVerifier, x.RedirectURI)
 }
 
 func parsePostman(_ context.Context, in json.RawMessage) (any, error) {

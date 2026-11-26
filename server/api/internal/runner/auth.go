@@ -34,80 +34,211 @@ var (
 	tokenCache = map[string]cachedToken{}
 )
 
-// oauth2Token returns an access token: the one given, or one fetched with
-// the client-credentials or password grant (cached until it expires).
+// oauth2Token returns an access token: the one given, one fetched with the
+// client-credentials or password grant (cached until it expires), or for the
+// authorization-code grant the one got by signing in, refreshed when it has
+// expired and a refresh token is there.
 func (r *Runner) oauth2Token(ctx context.Context, a Auth, vars map[string]string) (string, error) {
 	sub := func(s string) string { return Substitute(s, vars) }
-	if a.GrantType == "" || a.GrantType == "manual" {
+	switch a.GrantType {
+	case "", "manual":
 		return sub(a.Token), nil
+	case "authorization_code":
+		tok := sub(a.Token)
+		fresh := a.ExpiresAt == 0 || time.Now().Unix() < a.ExpiresAt-30
+		if tok != "" && fresh {
+			return tok, nil
+		}
+		if refresh := sub(a.RefreshToken); refresh != "" {
+			ts, err := r.cachedToken(ctx, a, vars, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}})
+			if err != nil {
+				return "", fmt.Errorf("%w. Sign in again with Get new access token", err)
+			}
+			return ts.AccessToken, nil
+		}
+		if tok != "" {
+			return "", errors.New("OAuth 2.0: the access token has expired. Get a new one in the Auth tab")
+		}
+		return "", errors.New("OAuth 2.0: there's no access token yet. Click Get new access token in the Auth tab to sign in")
+	case "client_credentials":
+		form := url.Values{"grant_type": {a.GrantType}}
+		return r.grantToken(ctx, a, vars, form)
+	case "password":
+		form := url.Values{"grant_type": {a.GrantType}, "username": {sub(a.Username)}, "password": {sub(a.Password)}}
+		return r.grantToken(ctx, a, vars, form)
 	}
-	tokenURL := sub(a.TokenURL)
-	if tokenURL == "" {
-		return "", errors.New("OAuth 2.0: set the access token URL")
-	}
-	form := url.Values{"grant_type": {a.GrantType}}
-	if s := sub(a.Scope); s != "" {
+	return "", fmt.Errorf("OAuth 2.0: grant type %q isn't supported", a.GrantType)
+}
+
+func (r *Runner) grantToken(ctx context.Context, a Auth, vars map[string]string, form url.Values) (string, error) {
+	if s := Substitute(a.Scope, vars); s != "" {
 		form.Set("scope", s)
 	}
-	switch a.GrantType {
-	case "client_credentials":
-	case "password":
-		form.Set("username", sub(a.Username))
-		form.Set("password", sub(a.Password))
-	default:
-		return "", fmt.Errorf("OAuth 2.0: grant type %q isn't supported (use client_credentials, password, or paste a token)", a.GrantType)
+	ts, err := r.cachedToken(ctx, a, vars, form)
+	if err != nil {
+		return "", err
 	}
-	clientID, secret := sub(a.ClientID), sub(a.ClientSecret)
-	if a.ClientAuth == "body" {
-		form.Set("client_id", clientID)
-		form.Set("client_secret", secret)
-	}
+	return ts.AccessToken, nil
+}
+
+// cachedToken asks the token URL, reusing an earlier answer to the same
+// question until it expires.
+func (r *Runner) cachedToken(ctx context.Context, a Auth, vars map[string]string, form url.Values) (*TokenSet, error) {
+	tokenURL, clientID, secret := Substitute(a.TokenURL, vars), Substitute(a.ClientID, vars), Substitute(a.ClientSecret, vars)
 	key := tokenURL + "\x00" + form.Encode() + "\x00" + clientID + "\x00" + secret
 	tokenMu.Lock()
 	if c, ok := tokenCache[key]; ok && time.Now().Before(c.expires) {
 		tokenMu.Unlock()
-		return c.token, nil
+		return &TokenSet{AccessToken: c.token}, nil
 	}
 	tokenMu.Unlock()
+	ts, err := r.requestToken(ctx, a, vars, form)
+	if err != nil {
+		return nil, err
+	}
+	exp := 5 * time.Minute
+	if ts.ExpiresAt > 0 {
+		exp = time.Until(time.Unix(ts.ExpiresAt, 0))
+	}
+	tokenMu.Lock()
+	tokenCache[key] = cachedToken{ts.AccessToken, time.Now().Add(exp - 30*time.Second)}
+	tokenMu.Unlock()
+	return ts, nil
+}
 
+// TokenSet is what an OAuth 2.0 token endpoint answered.
+type TokenSet struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken,omitempty"`
+	TokenType    string `json:"tokenType,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	IDToken      string `json:"idToken,omitempty"`
+	ExpiresAt    int64  `json:"expiresAt,omitempty"` // unix seconds; 0 = not said
+}
+
+// requestToken POSTs form to the token URL with the client's credentials.
+func (r *Runner) requestToken(ctx context.Context, a Auth, vars map[string]string, form url.Values) (*TokenSet, error) {
+	tokenURL := Substitute(a.TokenURL, vars)
+	if tokenURL == "" {
+		return nil, errors.New("OAuth 2.0: set the access token URL")
+	}
+	clientID, secret := Substitute(a.ClientID, vars), Substitute(a.ClientSecret, vars)
+	// Public clients (PKCE, no secret) send their ID in the body.
+	if a.ClientAuth == "body" || secret == "" {
+		if clientID != "" {
+			form.Set("client_id", clientID)
+		}
+		if secret != "" {
+			form.Set("client_secret", secret)
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("OAuth 2.0 token URL: %w", err)
+		return nil, fmt.Errorf("OAuth 2.0 token URL: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	if a.ClientAuth != "body" {
+	if a.ClientAuth != "body" && secret != "" {
 		req.SetBasicAuth(url.QueryEscape(clientID), url.QueryEscape(secret))
 	}
 	resp, err := (&http.Client{Transport: r.roundTripper(true)}).Do(req)
 	if err != nil {
-		return "", fmt.Errorf("OAuth 2.0 token request failed: %s", friendlyErr(err, 20*time.Second))
+		return nil, fmt.Errorf("OAuth 2.0 token request failed: %s", friendlyErr(err, 20*time.Second))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var tok struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		Error       string `json:"error"`
-		Description string `json:"error_description"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		TokenType    string `json:"token_type"`
+		Scope        string `json:"scope"`
+		IDToken      string `json:"id_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+		Error        string `json:"error"`
+		Description  string `json:"error_description"`
 	}
-	if err := json.Unmarshal(body, &tok); err != nil || resp.StatusCode >= 400 || tok.AccessToken == "" {
+	jerr := json.Unmarshal(body, &tok)
+	if jerr != nil && resp.StatusCode < 400 {
+		// Some older servers (GitHub without Accept) answer form-encoded.
+		if v, perr := url.ParseQuery(string(body)); perr == nil && v.Get("access_token") != "" {
+			tok.AccessToken, tok.RefreshToken, tok.TokenType, tok.Scope = v.Get("access_token"), v.Get("refresh_token"), v.Get("token_type"), v.Get("scope")
+			jerr = nil
+		}
+	}
+	if jerr != nil || resp.StatusCode >= 400 || tok.AccessToken == "" {
 		msg := strings.TrimSpace(tok.Error + " " + tok.Description)
 		if msg == "" {
 			msg = resp.Status
 		}
-		return "", fmt.Errorf("OAuth 2.0 token request: %s", msg)
+		return nil, fmt.Errorf("OAuth 2.0 token request: %s", msg)
 	}
-	exp := time.Duration(tok.ExpiresIn) * time.Second
-	if exp <= 0 {
-		exp = 5 * time.Minute
+	ts := &TokenSet{AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.TokenType, Scope: tok.Scope, IDToken: tok.IDToken}
+	if tok.ExpiresIn > 0 {
+		ts.ExpiresAt = time.Now().Unix() + tok.ExpiresIn
 	}
-	tokenMu.Lock()
-	tokenCache[key] = cachedToken{tok.AccessToken, time.Now().Add(exp - 30*time.Second)}
-	tokenMu.Unlock()
-	return tok.AccessToken, nil
+	return ts, nil
+}
+
+// PKCEChallenge turns a code verifier into the code_challenge for method
+// ("S256", "plain"; "off" or anything else means no challenge).
+func PKCEChallenge(method, verifier string) string {
+	switch strings.ToLower(method) {
+	case "", "s256":
+		sum := sha256.Sum256([]byte(verifier))
+		return base64.RawURLEncoding.EncodeToString(sum[:])
+	case "plain":
+		return verifier
+	}
+	return ""
+}
+
+// AuthorizeURL is where the browser goes to sign in for the
+// authorization-code grant. codeVerifier is kept by the caller and given
+// back to ExchangeCode.
+func AuthorizeURL(a Auth, vars map[string]string, redirectURI, state, codeVerifier string) (string, error) {
+	sub := func(s string) string { return Substitute(s, vars) }
+	u, err := url.Parse(sub(a.AuthURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", errors.New("OAuth 2.0: set the authorization URL, for example https://auth.example.com/authorize")
+	}
+	if sub(a.ClientID) == "" {
+		return "", errors.New("OAuth 2.0: set the client ID")
+	}
+	q := u.Query()
+	q.Set("response_type", "code")
+	q.Set("client_id", sub(a.ClientID))
+	q.Set("redirect_uri", redirectURI)
+	q.Set("state", state)
+	if s := sub(a.Scope); s != "" {
+		q.Set("scope", s)
+	}
+	if aud := sub(a.Audience); aud != "" {
+		q.Set("audience", aud)
+	}
+	if ch := PKCEChallenge(a.PKCE, codeVerifier); ch != "" {
+		q.Set("code_challenge", ch)
+		if strings.EqualFold(a.PKCE, "plain") {
+			q.Set("code_challenge_method", "plain")
+		} else {
+			q.Set("code_challenge_method", "S256")
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// ExchangeCode trades the code the sign-in page sent back for tokens.
+func (r *Runner) ExchangeCode(ctx context.Context, a Auth, vars map[string]string, code, codeVerifier, redirectURI string) (*TokenSet, error) {
+	if code == "" {
+		return nil, errors.New("OAuth 2.0: the sign-in page didn't send a code")
+	}
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirectURI}}
+	if PKCEChallenge(a.PKCE, codeVerifier) != "" {
+		form.Set("code_verifier", codeVerifier)
+	}
+	return r.requestToken(ctx, a, vars, form)
 }
 
 // ----- JWT -----
