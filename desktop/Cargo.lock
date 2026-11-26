@@ -6580,7 +6580,7 @@ dependencies = [
  "gpui-kit",
  "keyring",
  "open",
- "rand 0.9.5",
+ "rand 0.10.4",
  "reqwest",
  "serde",
  "serde_json",
