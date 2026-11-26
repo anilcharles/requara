@@ -1,5 +1,5 @@
 import { CheckCircleFilled, CloseCircleFilled, CopyOutlined, LoadingOutlined } from "@ant-design/icons";
-import { Alert, App, Button, Divider, Empty, Skeleton, Space, Tabs, theme, Typography } from "antd";
+import { Alert, App, Button, Divider, Empty, Skeleton, Space, Tabs, theme, Tooltip, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import type { SendResult } from "../../api";
 import { mono, StatusTag } from "../../components/bits";
@@ -51,20 +51,20 @@ export default function ResponsePane({ result: raw, sending, onCancel, onSaveExa
         {result.durationMs} ms
       </Typography.Text>
       <Typography.Text type="secondary">{bytes(result.sizeBytes)}</Typography.Text>
-      <Button
-        type="link"
-        size="small"
-        icon={<CopyOutlined />}
-        style={{ padding: 0 }}
-        onClick={() => {
-          navigator.clipboard.writeText(result.body);
-          message.success("Response copied");
-        }}
-      >
-        Copy
-      </Button>
+      <Tooltip title="Copy response">
+        <Button
+          type="text"
+          size="small"
+          icon={<CopyOutlined />}
+          aria-label="Copy response"
+          onClick={() => {
+            navigator.clipboard.writeText(result.body);
+            message.success("Response copied");
+          }}
+        />
+      </Tooltip>
       {onSaveExample && result.status > 0 && (
-        <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onSaveExample(result)}>
+        <Button type="text" size="small" onClick={() => onSaveExample(result)}>
           Save as example
         </Button>
       )}
@@ -84,8 +84,8 @@ export default function ResponsePane({ result: raw, sending, onCancel, onSaveExa
     content = result.error ? (
       <Alert type="error" showIcon message="The request didn't complete" description={result.error} />
     ) : (
-      <div style={{ height: "100%", borderRadius: 8, overflow: "hidden", border: `1px solid ${token.colorSplit}` }}>
-        <CodeEditor value={body!.text} language={body!.language} readOnly background={token.colorFillQuaternary} />
+      <div style={{ height: "100%", overflow: "hidden" }}>
+        <CodeEditor value={body!.text} language={body!.language} readOnly />
       </div>
     );
   } else if (tab === "events") {
@@ -194,10 +194,11 @@ export default function ResponsePane({ result: raw, sending, onCancel, onSaveExa
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "0 24px 20px" }}>
+      {/* The outcome first, on its own line; the tabs below it. */}
+      <div style={{ height: 30, display: "flex", alignItems: "center", marginTop: 6 }}>{meta ?? <Typography.Text type="secondary">Response</Typography.Text>}</div>
       <Tabs
         activeKey={tab}
         onChange={setTab}
-        tabBarExtraContent={meta}
         items={[
           { key: "body", label: "Response" },
           ...(events.length ? [{ key: "events", label: <span>Events <Typography.Text type="secondary" style={{ fontSize: 12 }}>{events.length}</Typography.Text></span> }] : []),

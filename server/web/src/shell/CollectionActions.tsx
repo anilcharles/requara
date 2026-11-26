@@ -167,13 +167,13 @@ export function ImportModal({ open, onClose, collectionId }: { open: boolean; on
             <p className="ant-upload-text">{zip ? zip.name : "Drop a Postman collection (v2.0 or v2.1) or a Requara files .zip here, or click to choose it"}</p>
             <p className="ant-upload-hint">In Postman: ··· on the collection → Export → Collection v2.1. A Git folder from Export as files: zip it first.</p>
           </Upload.Dragger>
-          <Input.TextArea rows={5} style={{ marginTop: 12, fontFamily: "JetBrains Mono, monospace", fontSize: 12 }} placeholder="…or paste the collection JSON" value={text} onChange={(e) => setText(e.target.value)} />
+          <Input.TextArea rows={5} style={{ marginTop: 12, fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 12 }} placeholder="…or paste the collection JSON" value={text} onChange={(e) => setText(e.target.value)} />
         </>
       ) : (
         <Input.TextArea
           rows={8}
           autoFocus
-          style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12 }}
+          style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 12 }}
           placeholder={"curl -X POST 'https://api.example.com/v1/orders' \\\n  -H 'Authorization: Bearer …' \\\n  -d '{\"sku\": \"A1\"}'"}
           value={text}
           onChange={(e) => setText(e.target.value)}

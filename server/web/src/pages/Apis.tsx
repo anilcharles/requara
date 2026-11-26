@@ -119,7 +119,7 @@ export default function Apis() {
               </div>
             ),
           },
-          { title: "Version", width: 110, render: (_, a) => <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, color: token.colorTextSecondary }}>{a.version}</span> },
+          { title: "Version", width: 110, render: (_, a) => <span style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 13, color: token.colorTextSecondary }}>{a.version}</span> },
           {
             title: "Status",
             width: 130,
@@ -178,10 +178,10 @@ function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) 
           <Input placeholder="Ledger API" autoFocus />
         </Form.Item>
         <Form.Item name="baseUrl" label="Base URL" rules={[{ type: "url", message: "Enter a full URL" }]}>
-          <Input placeholder="https://api.acme.dev/ledger" style={{ fontFamily: "JetBrains Mono, monospace" }} />
+          <Input placeholder="https://api.acme.dev/ledger" style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" }} />
         </Form.Item>
         <Form.Item name="version" label="Version">
-          <Input style={{ fontFamily: "JetBrains Mono, monospace" }} />
+          <Input style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" }} />
         </Form.Item>
         <Form.Item label="Start from" style={{ marginBottom: 0 }}>
           <Radio.Group value={start} onChange={(e) => setStart(e.target.value)} optionType="button" buttonStyle="solid" style={{ display: "flex" }}>
@@ -254,7 +254,7 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         value={url}
         disabled={!!file}
         onChange={(e) => setUrl(e.target.value)}
-        style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13 }}
+        style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 13 }}
       />
     </Modal>
   );

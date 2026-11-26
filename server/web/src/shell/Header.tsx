@@ -100,7 +100,7 @@ export default function Header() {
   };
 
   return (
-    <Layout.Header style={{ display: "flex", alignItems: "center", gap: 16, borderBottom: `1px solid ${token.colorSplit}`, lineHeight: "normal" }}>
+    <Layout.Header style={{ display: "flex", alignItems: "center", gap: 16, lineHeight: "normal" }}>
       <a onClick={() => nav("/apis")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
         <Logo />
         <Typography.Text strong style={{ fontSize: 16, letterSpacing: -0.2 }}>
@@ -141,7 +141,7 @@ export default function Header() {
       <div style={{ flex: 1 }} />
       <Button
         onClick={() => setPalette(true)}
-        style={{ width: 320, justifyContent: "flex-start", color: token.colorTextPlaceholder, display: "flex", alignItems: "center", gap: 8 }}
+        style={{ width: 360, height: 30, justifyContent: "flex-start", color: token.colorTextPlaceholder, display: "flex", alignItems: "center", gap: 8, background: token.colorFillTertiary, border: "none" }}
       >
         <SearchOutlined />
         <span style={{ flex: 1, textAlign: "left" }}>Search requests and APIs</span>
@@ -171,8 +171,8 @@ export default function Header() {
       ) : signedIn ? (
         <Button onClick={() => setCopying(true)}>Copy to team workspace</Button>
       ) : (
-        <Button type="primary" onClick={() => setSigningIn(true)}>
-          Sign in to your organization
+        <Button size="small" onClick={() => setSigningIn(true)}>
+          Sign in
         </Button>
       )}
       <Dropdown
@@ -211,7 +211,7 @@ export default function Header() {
           onClick: ({ key }) => (key === "signout" ? signOut() : key === "signin" ? setSigningIn(true) : nav(key)),
         }}
       >
-        <Avatar style={{ background: token.colorPrimaryBg, color: token.colorPrimaryText, cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+        <Avatar size={28} style={{ background: token.colorPrimaryBg, color: token.colorPrimaryText, cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
           {me.data ? initials(me.data.name) : ""}
         </Avatar>
       </Dropdown>

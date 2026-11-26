@@ -33,6 +33,11 @@ function useSystemDark() {
 }
 
 // Applies the signed-in user's theme and density to Ant Design.
+// Dark surfaces: the window chrome (header, rail, sidebar) a step darker than
+// the page, and panels on top, like Postman's dark theme.
+// Near-black window frame; the work canvas one step lighter.
+const DARK = { chrome: "#0E0E10", page: "#0E0E10", panel: "#161618" };
+
 export function PrefsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const onSignIn = location.pathname.startsWith("/signin");
@@ -63,7 +68,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
-    document.body.style.background = isDark ? "#000" : "#F5F5F5";
+    document.body.style.background = isDark ? DARK.page : "#F5F5F5";
   }, [isDark]);
 
   return (
@@ -71,8 +76,23 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
       <ConfigProvider
         theme={{
           algorithm: algorithms,
-          token: { colorPrimary: "#1677FF", borderRadius: 6, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" },
-          components: { Layout: { headerBg: isDark ? "#141414" : "#FFFFFF", siderBg: isDark ? "#141414" : "#FFFFFF", bodyBg: isDark ? "#000000" : "#F5F5F5", headerHeight: 56, headerPadding: "0 16px" } },
+          token: {
+            colorPrimary: "#7C7FF7", // Requara indigo, from the logo
+            borderRadius: 6,
+            fontSize: 13,
+            controlHeight: 30,
+            fontFamily: "'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            fontFamilyCode: "\'Geist Mono Variable\', ui-monospace, Menlo, monospace",
+            // One calm charcoal family instead of black and grey patches.
+            ...(isDark
+              ? { colorBgLayout: DARK.page, colorBgContainer: DARK.panel, colorBgElevated: "#1E1E21", colorBorder: "#2E2E33", colorBorderSecondary: "#232327", colorSplit: "#232327", colorText: "#EDEDEF", colorTextSecondary: "#A0A0A8", colorTextTertiary: "#6F6F78", colorFillTertiary: "rgba(255,255,255,0.05)", colorLink: "#A5A6F6", controlItemBgActive: "#1F1F23", controlItemBgActiveHover: "#232327" }
+              : {}),
+          },
+          components: {
+            Layout: { headerBg: isDark ? DARK.chrome : "#FFFFFF", siderBg: isDark ? DARK.chrome : "#FFFFFF", bodyBg: isDark ? DARK.page : "#F5F5F5", headerHeight: 48, headerPadding: "0 12px" },
+            Tabs: { horizontalItemPadding: "10px 0", horizontalItemGutter: 24, titleFontSize: 13 },
+            Button: { fontWeight: 500 },
+          },
         }}
       >
         <AntApp>{children}</AntApp>

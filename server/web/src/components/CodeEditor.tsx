@@ -52,7 +52,7 @@ function defineThemes() {
       { token: "string", foreground: "95DE64" },
       { token: "keyword", foreground: "FF85C0" },
     ],
-    colors: { "editor.background": "#141414", "editorGutter.background": "#1A1A1A" },
+    colors: { "editor.background": "#161618", "editorGutter.background": "#161618", "editorLineNumber.foreground": "#4A4A52" }, // the page's own charcoal
   });
 }
 
@@ -113,7 +113,7 @@ export default function CodeEditor({ value, language, onChange, readOnly, height
         options={{
           readOnly,
           minimap: { enabled: false },
-          fontFamily: prefs.codeFont ?? "JetBrains Mono, Menlo, monospace",
+          fontFamily: prefs.codeFont ?? "'Geist Mono Variable', ui-monospace, Menlo, monospace",
           fontSize: prefs.codeFontSize ?? 13,
           lineHeight: 22,
           scrollBeyondLastLine: false,

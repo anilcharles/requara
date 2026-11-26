@@ -176,7 +176,7 @@ function Preferences() {
           </Row>
           <Row label="Code font" last>
             <Space.Compact>
-              <Select value={prefs.codeFont ?? "JetBrains Mono"} style={{ width: 170 }} onChange={(v) => setPrefs({ codeFont: v })} options={["JetBrains Mono", "Menlo", "SF Mono", "Fira Code", "Consolas"].map((f) => ({ value: f, label: f }))} />
+              <Select value={prefs.codeFont ?? "Geist Mono Variable"} style={{ width: 170 }} onChange={(v) => setPrefs({ codeFont: v })} options={[{ value: "Geist Mono Variable", label: "Geist Mono" }, ...["JetBrains Mono", "Menlo", "SF Mono", "Fira Code", "Consolas"].map((f) => ({ value: f, label: f }))]} />
               <Select value={prefs.codeFontSize ?? 13} style={{ width: 80 }} onChange={(v) => setPrefs({ codeFontSize: v })} options={[12, 13, 14, 15, 16].map((n) => ({ value: n, label: `${n} px` }))} />
             </Space.Compact>
           </Row>
@@ -255,7 +255,7 @@ function AgentCard({ card }: { card: object }) {
         <Switch checked={a.enabled} disabled={!a.token} onChange={(enabled) => save({ enabled })} />
       </Row>
       <Row label="Agent address">
-        <Input value={a.url} onChange={(e) => save({ url: e.target.value })} style={{ width: 260, fontFamily: "JetBrains Mono, monospace" }} />
+        <Input value={a.url} onChange={(e) => save({ url: e.target.value })} style={{ width: 260, fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" }} />
       </Row>
       <Row label="Pairing token" last>
         <Space.Compact>

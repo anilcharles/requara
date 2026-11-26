@@ -1,4 +1,4 @@
-import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, SendOutlined, SettingOutlined, SlidersOutlined } from "@ant-design/icons";
+import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, SendOutlined, SlidersOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Dropdown, Input, Layout, Result, Spin, theme, Tooltip } from "antd";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -31,77 +31,98 @@ export function AppLayout() {
   if (me.isError) return <Navigate to={`/signin?redirect=${encodeURIComponent(loc.pathname + loc.search)}`} replace />;
   if (me.data && !me.data.workspaceId && !loc.pathname.startsWith("/admin")) return <NoWorkspace />;
   return (
-    <Layout style={{ height: "100vh" }}>
+    <Layout style={{ height: "100vh", flexDirection: "column" }}>
       <InstanceBanner />
       <Header />
-      <Layout style={{ flex: 1, minHeight: 0, flexDirection: "row" }}>
-        <IconRail />
-        <Layout style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+      {/* The window frame (top bar, sidebar) is one surface; pages sit on an inset canvas. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <AppSidebar />
+        <Canvas>
           <Outlet />
-        </Layout>
-      </Layout>
+        </Canvas>
+      </div>
       <ConsoleDock />
     </Layout>
   );
 }
 
-// IconRail: Postman-style navigation down the left edge. Each icon opens a
-// section; the panel beside it (collections, environments…) belongs to the page.
-const RAIL = [
-  { path: "/requests", icon: <SendOutlined />, label: "Collections" },
+// Navigation at the top of the one sidebar; the collections tree below it.
+const NAV = [
+  { path: "/requests", icon: <SendOutlined />, label: "Requests" },
   { path: "/apis", icon: <ApiOutlined />, label: "APIs" },
   { path: "/environments", icon: <SlidersOutlined />, label: "Environments" },
   { path: "/history", icon: <ClockCircleOutlined />, label: "History" },
-  { path: "/mocks", icon: <CodeOutlined />, label: "Mocks" },
+  { path: "/mocks", icon: <CodeOutlined />, label: "Mock servers" },
   { path: "/monitors", icon: <DashboardOutlined />, label: "Monitors" },
 ];
 
-function IconRail() {
+function AppSidebar() {
+  const nav = useNavigate();
+  const loc = useLocation();
+  const open = loc.pathname.match(/^\/requests\/([^/]+)/)?.[1];
+  return <CollectionsSider onPick={(r) => nav(`/requests/${r.id}`)} isSelected={(r) => r.id === open} />;
+}
+
+function NavList() {
   const { token } = theme.useToken();
   const nav = useNavigate();
   const loc = useLocation();
   const [cookies, setCookies] = useState(false);
-  // A collection's settings and runs belong to Collections.
   const active = (p: string) => loc.pathname.startsWith(p) || (p === "/requests" && /^\/(collections|runner)\//.test(loc.pathname));
-  const item = (key: string, icon: ReactNode, label: string, on: boolean, onClick: () => void) => (
-      <button
-        key={key}
-        type="button"
-        onClick={onClick}
-        aria-label={label}
-        aria-current={on ? "page" : undefined}
-        className="requara-rail-item"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 4,
-          width: 76,
-          padding: "8px 0",
-          border: "none",
-          borderRadius: 8,
-          cursor: "pointer",
-          background: on ? token.colorFillSecondary : "transparent",
-          color: on ? token.colorText : token.colorTextSecondary,
-          fontSize: 11,
-          fontFamily: "inherit",
-        }}
-      >
-        <span style={{ fontSize: 18, lineHeight: 1, color: on ? token.colorPrimary : undefined }}>{icon}</span>
-        <span style={{ whiteSpace: "nowrap" }}>{label}</span>
-      </button>
+  const row = (key: string, icon: ReactNode, label: string, on: boolean, onClick: () => void) => (
+    <div
+      key={key}
+      role="link"
+      aria-label={label}
+      tabIndex={0}
+      aria-current={on ? "page" : undefined}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      className="requara-row"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        height: 30,
+        padding: "0 10px",
+        borderRadius: 7,
+        cursor: "pointer",
+        background: on ? token.controlItemBgActive : undefined,
+        color: on ? token.colorText : token.colorTextSecondary,
+        fontWeight: on ? 500 : 400,
+      }}
+    >
+      <span style={{ fontSize: 14, color: on ? token.colorPrimary : token.colorTextTertiary, display: "grid" }}>{icon}</span>
+      {label}
+    </div>
   );
   return (
-    <nav
-      aria-label="Sections"
-      style={{ width: 88, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 0", borderRight: `1px solid ${token.colorSplit}`, background: token.Layout?.siderBg ?? token.colorBgContainer }}
-    >
-      {RAIL.map((r) => item(r.path, r.icon, r.label, active(r.path), () => nav(r.path)))}
-      <div style={{ flex: 1 }} />
-      {item("cookies", <GlobalOutlined />, "Cookies", false, () => setCookies(true))}
-      {item("settings", <SettingOutlined />, "Settings", loc.pathname.startsWith("/settings"), () => nav("/settings/preferences"))}
+    <div style={{ padding: "4px 8px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
+      {NAV.map((n) => row(n.path, n.icon, n.label, active(n.path), () => nav(n.path)))}
+      {row("cookies", <GlobalOutlined />, "Cookies", false, () => setCookies(true))}
       <CookiesModal open={cookies} onClose={() => setCookies(false)} />
-    </nav>
+    </div>
+  );
+}
+
+// The work area: a rounded panel inset in the window frame.
+function Canvas({ children }: { children: ReactNode }) {
+  const { token } = theme.useToken();
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        display: "flex",
+        margin: "0 8px 8px 0",
+        borderRadius: 12,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgContainer,
+        overflow: "hidden",
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -261,7 +282,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
         borderRadius: 6,
         cursor: "pointer",
         background: selected ? token.controlItemBgActive : undefined,
-        color: selected ? token.colorPrimary : token.colorText,
+        color: token.colorText, // selection shows as a quiet fill, not a color
       }}
     >
       {content}
@@ -269,10 +290,11 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
   );
   const caret = (o: boolean) => (o ? <CaretDownOutlined style={{ fontSize: 10, color: token.colorTextTertiary, width: 12 }} /> : <CaretRightOutlined style={{ fontSize: 10, color: token.colorTextTertiary, width: 12 }} />);
   return (
-    <Layout.Sider width={272} style={{ borderRight: `1px solid ${token.colorSplit}`, display: "flex", flexDirection: "column" }}>
+    <Layout.Sider width={260} style={{ display: "flex", flexDirection: "column", background: "transparent" }}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48, padding: "0 8px 0 16px" }}>
-          <span style={{ fontWeight: 600 }}>Collections</span>
+        <NavList />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 32, padding: "0 8px 0 18px", marginTop: 6 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: 0.2, color: token.colorTextTertiary }}>Collections</span>
           <Dropdown
             trigger={["click"]}
             menu={{
@@ -314,7 +336,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
                   <>
                     {caret(co)}
                     <span style={{ flex: 1, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: c.status === "deprecated" ? token.colorTextTertiary : undefined }}>{c.name}</span>
-                    <span style={{ fontSize: 11, color: token.colorTextTertiary, fontFamily: "JetBrains Mono, monospace" }}>{c.version}</span>
+                    <span style={{ fontSize: 11, color: token.colorTextTertiary, fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" }}>{c.version}</span>
                     <Dropdown trigger={["click"]} menu={collectionMenu(c)}>
                       <span className="requara-more" role="button" aria-label={`${c.name} actions`} onClick={(e) => e.stopPropagation()} style={{ padding: "0 4px", color: token.colorTextTertiary, fontWeight: 700 }}>
                         ···
@@ -373,16 +395,12 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
   );
 }
 
-// WorkspaceLayout: collections sidebar + page. Clicking a request opens it in Requests.
+// WorkspaceLayout: a page beside the app sidebar (the sidebar is AppLayout's).
 export function WorkspaceLayout() {
-  const nav = useNavigate();
   return (
-    <>
-      <CollectionsSider onPick={(r) => nav(`/requests/${r.id}`)} />
-      <Layout.Content style={{ overflow: "auto" }}>
-        <Outlet />
-      </Layout.Content>
-    </>
+    <Layout.Content style={{ overflow: "auto" }}>
+      <Outlet />
+    </Layout.Content>
   );
 }
 

@@ -13,7 +13,7 @@ import { BinaryEditor, FormDataEditor } from "../../components/FormDataEditor";
 import ExamplesButton from "./Examples";
 import WebSocketPanel from "./WebSocket";
 import { methodColor } from "../../lib";
-import { CollectionsSider, useCollections } from "../../shell/Layouts";
+import { useCollections } from "../../shell/Layouts";
 import { useEnvironments, useMe, usePrefs } from "../../shell/session";
 import { logSend } from "../../shell/consoleStore";
 import ResponsePane from "./ResponsePane";
@@ -84,19 +84,13 @@ function schemaFromFields(fields: Field[]): object {
 
 export default function Requests() {
   const { id } = useParams();
-  const nav = useNavigate();
   const cols = useCollections();
   if (!id) {
     const first = cols.data?.[0]?.folders[0]?.requests[0];
     if (cols.isLoading) return <Spin style={{ margin: 40 }} />;
     return first ? <Navigate to={`/requests/${first.id}`} replace /> : <EmptyRequests />;
   }
-  return (
-    <>
-      <CollectionsSider onPick={(r) => nav(`/requests/${r.id}`)} isSelected={(r) => r.id === id} />
-      <Workspace id={id} />
-    </>
-  );
+  return <Workspace id={id} />;
 }
 
 function Workspace({ id }: { id: string }) {
@@ -226,7 +220,8 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
   const [tab, setTab] = useState("body");
   const [scriptTab, setScriptTab] = useState<"pre" | "post">("post");
   const [result, setResult] = useState<SendResult | null>(null);
-  const [split, setSplit] = useState(() => Number(localStorage.getItem("requara.split") ?? 0.55));
+  // Editor and response side by side; split is the editor's share of the width.
+  const [split, setSplit] = useState(() => Number(localStorage.getItem("requara.hsplit") ?? 0.5));
   const [showCode, setShowCode] = useState(false);
   const splitRef = useRef(split);
   const abort = useRef<AbortController | null>(null);
@@ -448,13 +443,13 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
   const startDrag = (e: React.MouseEvent) => {
     const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
     const move = (ev: MouseEvent) => {
-      splitRef.current = Math.min(0.8, Math.max(0.25, (ev.clientY - box.top) / box.height));
+      splitRef.current = Math.min(0.75, Math.max(0.3, (ev.clientX - box.left) / box.width));
       setSplit(splitRef.current);
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
-      localStorage.setItem("requara.split", String(splitRef.current));
+      localStorage.setItem("requara.hsplit", String(splitRef.current));
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
@@ -492,9 +487,22 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, background: token.colorBgContainer }}>
       <CodeSnippetModal request={draft} open={showCode} onClose={() => setShowCode(false)} />
-      <div style={{ flex: `0 0 ${split * 100}%`, display: "flex", flexDirection: "column", padding: "16px 24px", gap: 16, minHeight: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Breadcrumb style={{ flex: 1 }} items={[{ title: where?.api ?? "Requests" }, { title: where?.folder || "Scratch" }, { title: <Input variant="borderless" value={draft.name} onChange={(e) => set({ name: e.target.value })} style={{ fontWeight: 600, padding: 0, width: Math.max(120, draft.name.length * 8 + 20) }} /> }]} />
+      <div style={{ display: "flex", flexDirection: "column", padding: "18px 24px 0", gap: 14 }}>
+        {/* The request reads like a document: where it lives, then its name as a title. */}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: token.colorTextTertiary, letterSpacing: 0.1 }}>
+              {where?.api ?? "Requests"} <span style={{ margin: "0 4px", opacity: 0.6 }}>/</span> {where?.folder || "Scratch"}
+            </div>
+            <Input
+              variant="borderless"
+              value={draft.name}
+              disabled={!!readOnly}
+              onChange={(e) => set({ name: e.target.value })}
+              aria-label="Request name"
+              style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.3, padding: 0, height: 34, color: token.colorText }}
+            />
+          </div>
           <ExamplesButton requestId={id} />
           <Button type="text" icon={<CodeOutlined />} onClick={() => setShowCode(true)}>
             Code
@@ -547,12 +555,18 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
             </Dropdown>
           </Space.Compact>
         </div>
-        <Tabs activeKey={tab} onChange={setTab} items={configTabs} style={{ marginBottom: -16 }} />
-        <div style={{ flex: 1, minHeight: 0, overflow: tab === "body" || tab === "scripts" ? "hidden" : "auto" }}>{panel}</div>
       </div>
-      <div onMouseDown={startDrag} style={{ height: 6, cursor: "row-resize", borderTop: `1px solid ${token.colorSplit}`, flexShrink: 0 }} />
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <ResponsePane result={result} sending={sending} onCancel={() => abort.current?.abort()} onSaveExample={readOnly ? undefined : (r) => saveExample(r)} />
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <div style={{ flex: `0 0 ${split * 100}%`, minWidth: 0, display: "flex", flexDirection: "column", padding: "4px 20px 16px 24px" }}>
+          <Tabs activeKey={tab} onChange={setTab} items={configTabs} style={{ marginBottom: 0 }} />
+          <div style={{ flex: 1, minHeight: 0, overflow: tab === "body" || tab === "scripts" ? "hidden" : "auto" }}>{panel}</div>
+        </div>
+        <div onMouseDown={startDrag} role="separator" aria-orientation="vertical" style={{ width: 9, marginLeft: -4, cursor: "col-resize", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+          <div style={{ width: 1, background: token.colorSplit }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, paddingTop: 4 }}>
+          <ResponsePane result={result} sending={sending} onCancel={() => abort.current?.abort()} onSaveExample={readOnly ? undefined : (r) => saveExample(r)} />
+        </div>
       </div>
     </div>
   );

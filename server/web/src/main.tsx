@@ -16,6 +16,8 @@ import SignIn from "./pages/SignIn";
 import SignInEmail from "./pages/SignInEmail";
 import { AppLayout, PageLayout, WorkspaceLayout } from "./shell/Layouts";
 import { PrefsProvider } from "./shell/session";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "./styles.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } } });
