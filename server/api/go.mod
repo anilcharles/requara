@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/minio/minio-go/v7 v7.4.1
-	github.com/oasdiff/oasdiff v1.37.0
+	github.com/oasdiff/oasdiff v1.39.0
 	github.com/openbao/openbao/api/v2 v2.7.1
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/riverqueue/river v0.51.2
@@ -26,7 +26,6 @@ require (
 	charm.land/lipgloss/v2 v2.0.6 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
-	github.com/TwiN/go-color v1.4.1 // indirect
 	github.com/a-h/templ v0.3.1070 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/aymanbagabas/go-udiff v0.4.1 // indirect
