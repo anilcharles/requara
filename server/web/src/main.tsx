@@ -14,7 +14,7 @@ import Settings from "./pages/Settings";
 import Admin from "./pages/admin/Admin";
 import SignIn from "./pages/SignIn";
 import SignInEmail from "./pages/SignInEmail";
-import { AppLayout, WorkspaceLayout } from "./shell/Layouts";
+import { AppLayout, PageLayout, WorkspaceLayout } from "./shell/Layouts";
 import { PrefsProvider } from "./shell/session";
 import "./styles.css";
 
@@ -32,13 +32,16 @@ createRoot(document.getElementById("root")!).render(
               <Route index element={<Navigate to="/apis" replace />} />
               <Route path="/apis" element={<Apis />} />
               <Route path="/requests/:id?" element={<Requests />} />
-              <Route element={<WorkspaceLayout />}>
+              {/* Rail sections with their own list fill the page; collection pages keep the tree. */}
+              <Route element={<PageLayout />}>
                 <Route path="/history" element={<History />} />
                 <Route path="/mocks" element={<Mocks />} />
                 <Route path="/environments/:envId?" element={<Environments />} />
+                <Route path="/monitors" element={<Monitors />} />
+              </Route>
+              <Route element={<WorkspaceLayout />}>
                 <Route path="/collections/:id" element={<CollectionSettings />} />
                 <Route path="/runner/:id" element={<Runner />} />
-                <Route path="/monitors" element={<Monitors />} />
               </Route>
               <Route path="/settings/:section?" element={<Settings />} />
               <Route path="/admin/:section?" element={<Admin />} />

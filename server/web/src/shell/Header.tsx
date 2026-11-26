@@ -1,8 +1,8 @@
 import { DesktopOutlined, DownOutlined, MoonOutlined, SearchOutlined, SunOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Divider, Dropdown, Input, Layout, Menu, Modal, theme, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Divider, Dropdown, Input, Layout, Modal, theme, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { get, isSignedIn, post, selectWorkspace, serverApi } from "../api";
 import { SignInModal } from "../components/SignInOptions";
 import { PERSONAL_ID } from "../personal/backend";
@@ -34,11 +34,6 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
-const NAV = [
-  { key: "apis", label: "APIs", path: "/apis" },
-  { key: "requests", label: "Requests", path: "/requests" },
-];
-
 /** Make a workspace (you become its owner) and switch to it. */
 export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { message } = App.useApp();
@@ -66,11 +61,10 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
 export default function Header() {
   const { token } = theme.useToken();
   const nav = useNavigate();
-  const loc = useLocation();
   const qc = useQueryClient();
   const me = useMe();
   const { prefs, isDark, setPrefs } = usePrefs();
-  const mode = prefs.theme ?? "system";
+  const mode = prefs.theme ?? "dark";
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: () => get<{ id: string; name: string; role: string }[]>("/api/workspaces") });
   const [palette, setPalette] = useState(false);
   const [share, setShare] = useState(false);
@@ -96,7 +90,6 @@ export default function Header() {
     return () => window.removeEventListener("keydown", onKey);
   }, [nav]);
 
-  const section = loc.pathname.split("/")[1];
   const current = workspaces.data?.find((w) => w.id === me.data?.workspaceId);
 
   const signOut = async () => {
@@ -145,13 +138,6 @@ export default function Header() {
           {current?.name ?? "Workspace"} <DownOutlined style={{ fontSize: 10, color: token.colorTextTertiary }} />
         </Button>
       </Dropdown>
-      <Menu
-        mode="horizontal"
-        selectedKeys={[section]}
-        items={NAV.map((n) => ({ key: n.key, label: n.label }))}
-        onClick={({ key }) => nav(NAV.find((n) => n.key === key)!.path)}
-        style={{ borderBottom: "none", minWidth: 180, background: "transparent", lineHeight: "54px" }}
-      />
       <div style={{ flex: 1 }} />
       <Button
         onClick={() => setPalette(true)}

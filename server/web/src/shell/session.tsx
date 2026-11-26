@@ -44,7 +44,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
 
   const systemDark = useSystemDark();
   const prefs = me.data?.prefs ?? {};
-  const mode = prefs.theme ?? "system";
+  const mode = prefs.theme ?? "dark";
   const isDark = mode === "dark" || (mode === "system" && systemDark);
 
   const save = useMutation({

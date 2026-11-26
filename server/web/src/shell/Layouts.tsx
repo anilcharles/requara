@@ -1,9 +1,9 @@
-import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, SlidersOutlined } from "@ant-design/icons";
+import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, SendOutlined, SettingOutlined, SlidersOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Dropdown, Input, Layout, Result, Spin, theme, Tooltip } from "antd";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { get, mocksPath, type Collection, type CollectionRequest, type Instance, type Mock } from "../api";
+import { get, type Collection, type CollectionRequest, type Instance } from "../api";
 import { Method } from "../components/bits";
 import { downloadCollection, ImportModal, NewCollectionModal, RenameCollectionModal, useDeleteCollection, useNewRequest } from "./CollectionActions";
 import ConsoleDock from "./Console";
@@ -34,11 +34,74 @@ export function AppLayout() {
     <Layout style={{ height: "100vh" }}>
       <InstanceBanner />
       <Header />
-      <Layout style={{ flex: 1, minHeight: 0 }}>
-        <Outlet />
+      <Layout style={{ flex: 1, minHeight: 0, flexDirection: "row" }}>
+        <IconRail />
+        <Layout style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+          <Outlet />
+        </Layout>
       </Layout>
       <ConsoleDock />
     </Layout>
+  );
+}
+
+// IconRail: Postman-style navigation down the left edge. Each icon opens a
+// section; the panel beside it (collections, environments…) belongs to the page.
+const RAIL = [
+  { path: "/requests", icon: <SendOutlined />, label: "Collections" },
+  { path: "/apis", icon: <ApiOutlined />, label: "APIs" },
+  { path: "/environments", icon: <SlidersOutlined />, label: "Environments" },
+  { path: "/history", icon: <ClockCircleOutlined />, label: "History" },
+  { path: "/mocks", icon: <CodeOutlined />, label: "Mocks" },
+  { path: "/monitors", icon: <DashboardOutlined />, label: "Monitors" },
+];
+
+function IconRail() {
+  const { token } = theme.useToken();
+  const nav = useNavigate();
+  const loc = useLocation();
+  const [cookies, setCookies] = useState(false);
+  // A collection's settings and runs belong to Collections.
+  const active = (p: string) => loc.pathname.startsWith(p) || (p === "/requests" && /^\/(collections|runner)\//.test(loc.pathname));
+  const item = (key: string, icon: ReactNode, label: string, on: boolean, onClick: () => void) => (
+      <button
+        key={key}
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        aria-current={on ? "page" : undefined}
+        className="requara-rail-item"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          width: 76,
+          padding: "8px 0",
+          border: "none",
+          borderRadius: 8,
+          cursor: "pointer",
+          background: on ? token.colorFillSecondary : "transparent",
+          color: on ? token.colorText : token.colorTextSecondary,
+          fontSize: 11,
+          fontFamily: "inherit",
+        }}
+      >
+        <span style={{ fontSize: 18, lineHeight: 1, color: on ? token.colorPrimary : undefined }}>{icon}</span>
+        <span style={{ whiteSpace: "nowrap" }}>{label}</span>
+      </button>
+  );
+  return (
+    <nav
+      aria-label="Sections"
+      style={{ width: 88, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 0", borderRight: `1px solid ${token.colorSplit}`, background: token.Layout?.siderBg ?? token.colorBgContainer }}
+    >
+      {RAIL.map((r) => item(r.path, r.icon, r.label, active(r.path), () => nav(r.path)))}
+      <div style={{ flex: 1 }} />
+      {item("cookies", <GlobalOutlined />, "Cookies", false, () => setCookies(true))}
+      {item("settings", <SettingOutlined />, "Settings", loc.pathname.startsWith("/settings"), () => nav("/settings/preferences"))}
+      <CookiesModal open={cookies} onClose={() => setCookies(false)} />
+    </nav>
   );
 }
 
@@ -118,7 +181,6 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState<{ collectionId?: string | null } | null>(null);
   const [renaming, setRenaming] = useState<Collection | null>(null);
-  const [cookies, setCookies] = useState(false);
   const collectionMenu = (c: Collection) => ({
     items: [
       { key: "add", label: "Add request" },
@@ -147,9 +209,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
       if (key === "delete") deleteCollection(c);
     },
   });
-  const loc = useLocation();
   const cols = useCollections();
-  const mocks = useQuery({ queryKey: ["mocks"], queryFn: () => get<Mock[]>(mocksPath()), staleTime: 30_000 });
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useStored<Record<string, boolean>>("requara.tree", {});
 
@@ -208,14 +268,6 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
     </div>
   );
   const caret = (o: boolean) => (o ? <CaretDownOutlined style={{ fontSize: 10, color: token.colorTextTertiary, width: 12 }} /> : <CaretRightOutlined style={{ fontSize: 10, color: token.colorTextTertiary, width: 12 }} />);
-  const running = (mocks.data ?? []).filter((m) => m.enabled).length;
-  const footer = [
-    { path: "/history", icon: <ClockCircleOutlined />, label: "History" },
-    { path: "/mocks", icon: <CodeOutlined />, label: "Mock servers", extra: running ? `${running} running` : "" },
-    { path: "/environments", icon: <SlidersOutlined />, label: "Environments" },
-    { path: "/monitors", icon: <DashboardOutlined />, label: "Monitors" },
-  ];
-
   return (
     <Layout.Sider width={272} style={{ borderRight: `1px solid ${token.colorSplit}`, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -313,37 +365,10 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
             </div>
           )}
         </div>
-        <div style={{ borderTop: `1px solid ${token.colorSplit}`, padding: "8px 8px 12px" }}>
-          {footer.map((f) =>
-            row(
-              f.path,
-              0,
-              <>
-                <span style={{ color: loc.pathname.startsWith(f.path) ? token.colorPrimary : token.colorTextSecondary }}>{f.icon}</span>
-                <span style={{ flex: 1 }}>{f.label}</span>
-                {f.extra && <span style={{ fontSize: 12, color: token.colorTextTertiary }}>{f.extra}</span>}
-              </>,
-              () => nav(f.path),
-              loc.pathname.startsWith(f.path),
-            ),
-          )}
-          {row(
-            "cookies",
-            0,
-            <>
-              <span style={{ color: token.colorTextSecondary }}>
-                <GlobalOutlined />
-              </span>
-              <span style={{ flex: 1 }}>Cookies</span>
-            </>,
-            () => setCookies(true),
-          )}
-        </div>
       </div>
       <NewCollectionModal open={creating} onClose={() => setCreating(false)} />
       <ImportModal open={!!importing} collectionId={importing?.collectionId} onClose={() => setImporting(null)} />
       <RenameCollectionModal collection={renaming} onClose={() => setRenaming(null)} />
-      <CookiesModal open={cookies} onClose={() => setCookies(false)} />
     </Layout.Sider>
   );
 }
@@ -358,5 +383,14 @@ export function WorkspaceLayout() {
         <Outlet />
       </Layout.Content>
     </>
+  );
+}
+
+// PageLayout: a rail section that lists its own items (environments, history…).
+export function PageLayout() {
+  return (
+    <Layout.Content style={{ overflow: "auto" }}>
+      <Outlet />
+    </Layout.Content>
   );
 }
