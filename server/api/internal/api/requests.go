@@ -590,9 +590,11 @@ func (s *Server) sendDoc(ctx context.Context, p *Principal, d *requestDoc, envID
 			}
 		}
 		if len(res.GlobalChanges) > 0 {
-			if rv.globalID == "" {
-				envChanges = merged(envChanges, res.GlobalChanges)
-			} else if err := s.applyScriptVars(ctx, p, rv.globalID, res.GlobalChanges); err != nil {
+			globalID, err := s.globalsEnv(ctx, p.WorkspaceID, rv.globalID)
+			if err == nil {
+				err = s.applyScriptVars(ctx, p, globalID, res.GlobalChanges)
+			}
+			if err != nil {
 				errs = append(errs, err.Error())
 			}
 		}
@@ -614,6 +616,24 @@ func (s *Server) sendDoc(ctx context.Context, p *Principal, d *requestDoc, envID
 		return nil, "", "", err
 	}
 	return res, envName, historyID, nil
+}
+
+// globalsEnv is the workspace's Globals environment, made the first time a
+// script sets a global.
+func (s *Server) globalsEnv(ctx context.Context, ws, known string) (string, error) {
+	if known != "" {
+		return known, nil
+	}
+	var id string
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO environments (workspace_id, name, color, is_global, sort)
+		SELECT $1, 'Globals', '#BFBFBF', true, 1000
+		WHERE NOT EXISTS (SELECT 1 FROM environments WHERE workspace_id=$1 AND is_global)
+		RETURNING id`, ws).Scan(&id)
+	if notFound(err) {
+		err = s.db.QueryRow(ctx, `SELECT id FROM environments WHERE workspace_id=$1 AND is_global ORDER BY sort LIMIT 1`, ws).Scan(&id)
+	}
+	return id, err
 }
 
 func merged(a, b map[string]string) map[string]string {
