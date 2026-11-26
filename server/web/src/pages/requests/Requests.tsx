@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Breadcrumb, Button, Dropdown, Input, InputNumber, Layout, Segmented, Select, Space, Spin, Switch, Tabs, theme, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
-import { api, get, post, put, type Field, type OperationDetail, type RequestDoc, type SendResult } from "../../api";
+import { api, get, personalActive, post, put, type Field, type OperationDetail, type RequestDoc, type SendResult } from "../../api";
 import { Method, mono } from "../../components/bits";
 import CodeEditor from "../../components/CodeEditor";
 import KeyValueTable from "../../components/KeyValueTable";
@@ -413,6 +413,34 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
         {row("Verify SSL certificates", "Reject self-signed and expired certificates", <Switch checked={s.verifySSL !== false} onChange={(v) => set({ settings: { ...s, verifySSL: v } })} />)}
         {row("Encode URL automatically", "Percent-encode the query before sending", <Switch checked={s.encodeURL !== false} onChange={(v) => set({ settings: { ...s, encodeURL: v } })} />)}
         {row("Request timeout", "Empty uses your default from Preferences", <InputNumber value={s.timeoutMs || null} min={100} max={300000} addonAfter="ms" placeholder={String(prefs.defaultTimeoutMs ?? 30000)} onChange={(v) => set({ settings: { ...s, timeoutMs: v ?? 0 } })} style={{ width: 160 }} />)}
+        <Typography.Title level={5} style={{ marginTop: 24 }}>
+          Network
+        </Typography.Title>
+        {personalActive() && (
+          <Alert type="info" showIcon style={{ marginBottom: 8 }} message="My workspace sends from this browser, which uses its own proxy and certificates. These settings apply when a team workspace sends from your organization's server." />
+        )}
+        {row("Proxy", "Empty uses the server's (HTTPS_PROXY). http://, https:// or socks5:// URL", <Input value={s.proxy ?? ""} disabled={readOnly} onChange={(e) => set({ settings: { ...s, proxy: e.target.value } })} placeholder="http://proxy.example.com:3128" style={{ ...mono, width: 280 }} />)}
+        <div style={{ padding: "14px 0", borderBottom: `1px solid ${token.colorSplit}` }}>
+          <div style={{ fontWeight: 500 }}>Client certificate</div>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            For mutual TLS: the PEM certificate (chain). Use a {"{{variable}}"} to keep it in an environment.
+          </Typography.Text>
+          <Input.TextArea rows={2} value={s.clientCert ?? ""} disabled={readOnly} onChange={(e) => set({ settings: { ...s, clientCert: e.target.value } })} placeholder="{{client_cert}}" style={{ ...mono, marginTop: 8 }} />
+        </div>
+        <div style={{ padding: "14px 0", borderBottom: `1px solid ${token.colorSplit}` }}>
+          <div style={{ fontWeight: 500 }}>Client certificate key</div>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            Its unencrypted PEM private key. Keep it in a secret variable.
+          </Typography.Text>
+          <Input.TextArea rows={2} value={s.clientKey ?? ""} disabled={readOnly} onChange={(e) => set({ settings: { ...s, clientKey: e.target.value } })} placeholder="{{client_key}}" style={{ ...mono, marginTop: 8 }} />
+        </div>
+        <div style={{ padding: "14px 0", borderBottom: `1px solid ${token.colorSplit}` }}>
+          <div style={{ fontWeight: 500 }}>CA certificates</div>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            PEM certificates to trust as well as the usual ones, for internal or self-signed servers.
+          </Typography.Text>
+          <Input.TextArea rows={2} value={s.caCert ?? ""} disabled={readOnly} onChange={(e) => set({ settings: { ...s, caCert: e.target.value } })} placeholder="-----BEGIN CERTIFICATE-----" style={{ ...mono, marginTop: 8 }} />
+        </div>
       </div>
     );
   }

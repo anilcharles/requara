@@ -40,7 +40,8 @@ type Server struct {
 
 func New(cfg *config.Config, db *pgxpool.Pool, b *bao.Client, signin *auth.Manager, s3 *storage.S3, jobs *river.Client[pgx.Tx]) *Server {
 	return &Server{cfg: cfg, db: db, bao: b, s3: s3, jobs: jobs, hub: events.NewHub(), signin: signin,
-		runner: &runner.Runner{AllowPrivateNetwork: cfg.AllowPrivateNetwork}}
+		// Outbound calls honour HTTPS_PROXY, HTTP_PROXY and NO_PROXY.
+		runner: &runner.Runner{AllowPrivateNetwork: cfg.AllowPrivateNetwork, Proxy: http.ProxyFromEnvironment}}
 }
 
 func (s *Server) Routes() http.Handler {

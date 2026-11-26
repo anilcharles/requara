@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -105,6 +106,12 @@ type Settings struct {
 	VerifySSL       *bool `json:"verifySSL,omitempty"`
 	EncodeURL       *bool `json:"encodeURL,omitempty"`
 	TimeoutMs       int   `json:"timeoutMs,omitempty"`
+
+	// Network. Each takes {{variables}}, so PEMs can live in secret variables.
+	Proxy      string `json:"proxy,omitempty"`      // http://, https:// or socks5:// URL; empty = the server's own
+	ClientCert string `json:"clientCert,omitempty"` // PEM certificate (chain) for mutual TLS
+	ClientKey  string `json:"clientKey,omitempty"`  // its unencrypted PEM private key
+	CACert     string `json:"caCert,omitempty"`     // PEM certificates to trust as well as the system's
 }
 
 func (s Settings) follow() bool { return s.FollowRedirects == nil || *s.FollowRedirects }
@@ -157,8 +164,13 @@ type Result struct {
 type Runner struct {
 	AllowPrivateNetwork bool
 	// Transport, when set, sends every request (the browser build uses the
-	// browser's fetch; tests can fake the network).
+	// browser's fetch; tests can fake the network). Network settings
+	// (proxy, certificates) don't apply then.
 	Transport http.RoundTripper
+	// Proxy is the operator's outbound proxy (the server uses HTTPS_PROXY,
+	// HTTP_PROXY and NO_PROXY). Unlike a request's own proxy, it may be on a
+	// private network.
+	Proxy func(*http.Request) (*url.URL, error)
 }
 
 var varRe = regexp.MustCompile(`\{\{\s*([$A-Za-z0-9_.\-]+)\s*\}\}`)
@@ -380,7 +392,12 @@ func (r *Runner) Send(ctx context.Context, s Spec, vars map[string]string, secre
 	}
 	t := &tracer{}
 	httpReq = httpReq.WithContext(httptrace.WithClientTrace(ctx, t.trace()))
-	client := &http.Client{Transport: r.roundTripper(s.Settings.verify())}
+	rt, err := r.requestTransport(ctx, s.Settings, vars, httpReq)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	client := &http.Client{Transport: rt}
 	if !s.Settings.follow() {
 		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
@@ -535,29 +552,131 @@ func blocked(ip net.IP) bool {
 		ip.Equal(net.ParseIP("169.254.169.254")) // cloud metadata
 }
 
+// netOpts is how one send reaches the network.
+type netOpts struct {
+	verify  bool
+	proxy   func(*http.Request) (*url.URL, error)
+	trusted map[string]bool // IPs the guard lets through: the operator's proxy
+	certs   []tls.Certificate
+	roots   *x509.CertPool
+}
+
+// roundTripper is for Requara's own calls (OAuth token, spec import): the
+// operator's proxy, no client certificate.
 func (r *Runner) roundTripper(verify bool) http.RoundTripper {
 	if r.Transport != nil {
 		return r.Transport
 	}
-	return r.transport(verify)
+	o := netOpts{verify: verify, proxy: r.Proxy}
+	if r.Proxy != nil {
+		o.trusted = r.operatorProxyIPs()
+	}
+	return r.transport(o)
 }
 
-func (r *Runner) transport(verify bool) *http.Transport {
+// operatorProxyIPs are the addresses of the operator's proxies, which may be
+// on a private network.
+func (r *Runner) operatorProxyIPs() map[string]bool {
+	out := map[string]bool{}
+	for _, scheme := range []string{"http", "https"} {
+		pu, err := r.Proxy(&http.Request{URL: &url.URL{Scheme: scheme, Host: "example.com"}})
+		if err != nil || pu == nil {
+			continue
+		}
+		if ips, err := net.LookupIP(pu.Hostname()); err == nil {
+			for _, ip := range ips {
+				out[ip.String()] = true
+			}
+		}
+	}
+	return out
+}
+
+// requestTransport builds the transport for one send from its settings.
+func (r *Runner) requestTransport(ctx context.Context, s Settings, vars map[string]string, req *http.Request) (http.RoundTripper, error) {
+	if r.Transport != nil {
+		return r.Transport, nil
+	}
+	o := netOpts{verify: s.verify(), proxy: r.Proxy}
+	if p := strings.TrimSpace(Substitute(s.Proxy, vars)); p != "" {
+		pu, err := url.Parse(p)
+		if err != nil || pu.Host == "" || (pu.Scheme != "http" && pu.Scheme != "https" && pu.Scheme != "socks5" && pu.Scheme != "socks5h") {
+			return nil, errors.New("Proxy: use a URL such as http://proxy.example.com:3128 or socks5://127.0.0.1:1080")
+		}
+		o.proxy = http.ProxyURL(pu)
+	} else if r.Proxy != nil {
+		o.trusted = r.operatorProxyIPs()
+	}
+	if cert, key := strings.TrimSpace(Substitute(s.ClientCert, vars)), strings.TrimSpace(Substitute(s.ClientKey, vars)); cert != "" || key != "" {
+		pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+		if err != nil {
+			return nil, fmt.Errorf("Client certificate: %s. Paste the PEM certificate and its unencrypted PEM key", cleanTLSErr(err))
+		}
+		o.certs = []tls.Certificate{pair}
+	}
+	if ca := strings.TrimSpace(Substitute(s.CACert, vars)); ca != "" {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM([]byte(ca)) {
+			return nil, errors.New("CA certificate: no PEM certificate found in it")
+		}
+		o.roots = pool
+	}
+	// Through a proxy the guard only sees the proxy's address, so check
+	// where the request is going before handing it over.
+	if o.proxy != nil && !r.AllowPrivateNetwork {
+		if pu, err := o.proxy(req); err == nil && pu != nil {
+			if err := checkHost(ctx, req.URL.Hostname()); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return r.transport(o), nil
+}
+
+func cleanTLSErr(err error) string {
+	return strings.TrimPrefix(err.Error(), "tls: ")
+}
+
+// checkHost refuses a host that is, or resolves to, a blocked address.
+func checkHost(ctx context.Context, host string) error {
+	if ip := net.ParseIP(host); ip != nil {
+		if blocked(ip) {
+			return &blockedErr{ip: ip}
+		}
+		return nil
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil // the proxy resolves it; it answers if it can't
+	}
+	for _, a := range addrs {
+		if blocked(a.IP) {
+			return &blockedErr{ip: a.IP}
+		}
+	}
+	return nil
+}
+
+func (r *Runner) transport(o netOpts) *http.Transport {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: -1}
 	if !r.AllowPrivateNetwork {
 		// Checked after DNS resolution, on the actual IP being dialled, so
 		// DNS rebinding can't sneak an internal address past us.
 		dialer.Control = func(_, address string, _ syscall.RawConn) error {
 			host, _, _ := net.SplitHostPort(address)
-			if ip := net.ParseIP(host); ip != nil && blocked(ip) {
+			if ip := net.ParseIP(host); ip != nil && blocked(ip) && !o.trusted[ip.String()] {
 				return &blockedErr{ip: ip}
 			}
 			return nil
 		}
 	}
 	return &http.Transport{
+		Proxy:               o.proxy,
 		DialContext:         dialer.DialContext,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: !verify}, //nolint:gosec // user setting
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: !o.verify, Certificates: o.certs, RootCAs: o.roots}, //nolint:gosec // user setting
 		TLSHandshakeTimeout: 10 * time.Second,
 		DisableKeepAlives:   true, // every send measures a fresh connection
 		ForceAttemptHTTP2:   true,

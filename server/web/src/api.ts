@@ -277,7 +277,7 @@ export type Monitor = {
 };
 export type RunResult = { requestId: string; name: string; method: string; url: string; status: number; durationMs: number; tests: { name: string; pass: boolean; error?: string }[] | null; error?: string };
 export type MonitorRun = { id: string; startedAt: string; durationMs: number; requests: number; passed: number; failed: number; errors: number; results: RunResult[] };
-export type Settings = { followRedirects?: boolean; verifySSL?: boolean; encodeURL?: boolean; timeoutMs?: number };
+export type Settings = { followRedirects?: boolean; verifySSL?: boolean; encodeURL?: boolean; timeoutMs?: number; proxy?: string; clientCert?: string; clientKey?: string; caCert?: string };
 
 export type RequestDoc = {
   id: string;
