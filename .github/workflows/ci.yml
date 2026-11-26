@@ -17,7 +17,7 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
       - name: gitleaks (settings in .gitleaks.toml)
         run: |
@@ -28,8 +28,8 @@ jobs:
     name: Dependency vulnerabilities
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: server/api/go.mod
           cache-dependency-path: server/api/go.sum
@@ -39,7 +39,8 @@ jobs:
       - name: Web (npm audit)
         working-directory: server/web
         run: npm audit --audit-level=moderate
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with: { toolchain: stable }
       - name: Desktop (cargo audit)
         working-directory: desktop
         run: cargo install cargo-audit --locked && cargo audit
@@ -49,8 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: server/api } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: server/api/go.mod
           cache-dependency-path: server/api/go.sum
@@ -63,8 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: server/web } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -79,9 +80,9 @@ jobs:
       matrix:
         image: [api, web]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: server/${{ matrix.image }}
           push: false
@@ -97,10 +98,10 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-22.04]
     defaults: { run: { working-directory: desktop } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: "rustfmt, clippy" }
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with: { toolchain: stable, components: "rustfmt, clippy" }
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { workspaces: desktop }
       - name: Linux libraries for GPUI and the keychain
         if: runner.os == 'Linux'
