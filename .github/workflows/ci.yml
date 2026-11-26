@@ -61,7 +61,9 @@ jobs:
       - name: Desktop (cargo audit)
         working-directory: desktop
         run: |
-          command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
+          # Tools CI installs go in the runner's own folder, never the machine's ~/.cargo.
+          tools="$RUNNER_TOOL_CACHE/cargo-tools"; export PATH="$tools/bin:$PATH"
+          command -v cargo-audit >/dev/null || cargo install --locked --root "$tools" cargo-audit
           cargo audit
 
   api:
@@ -136,8 +138,8 @@ jobs:
     defaults: { run: { working-directory: desktop } }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with: { workspaces: desktop }
+      # No rust-cache here: on a self-hosted runner its cleanup deletes the machine's
+      # own programs from ~/.cargo/bin. The build folder persists between runs anyway.
       # Uses the runner's installed Rust (rustup); no toolchain changes on the machine.
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
