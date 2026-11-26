@@ -6,7 +6,7 @@
 # Keycloak redirect need that).
 
 # The build output is plain files, so build once on the runner's architecture.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26-alpine AS build
 WORKDIR /web
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
