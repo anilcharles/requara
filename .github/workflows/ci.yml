@@ -1,5 +1,8 @@
 name: CI
 
+# Runs on the self-hosted runner (label "speklo"). Jobs from pull requests
+# opened from forks are skipped, so outside code never runs on that machine.
+# (Fork PR workflows are also disabled in the repository's Actions settings.)
 on:
   pull_request:
   push:
@@ -15,18 +18,24 @@ permissions:
 jobs:
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
       - name: gitleaks (settings in .gitleaks.toml)
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar xz gitleaks
-          ./gitleaks git --redact -v
+          case "$(uname -s)-$(uname -m)" in
+            Darwin-arm64) asset=darwin_arm64 ;; Darwin-x86_64) asset=darwin_x64 ;;
+            Linux-aarch64) asset=linux_arm64 ;; *) asset=linux_x64 ;;
+          esac
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_${asset}.tar.gz" | tar xz -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact -v
 
   vulnerabilities:
     name: Dependency vulnerabilities
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -39,15 +48,16 @@ jobs:
       - name: Web (npm audit)
         working-directory: server/web
         run: npm audit --audit-level=moderate
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
-        with: { toolchain: stable }
       - name: Desktop (cargo audit)
         working-directory: desktop
-        run: cargo install cargo-audit --locked && cargo audit
+        run: |
+          command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
+          cargo audit
 
   api:
     name: Server API (Go)
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/api } }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,7 +71,8 @@ jobs:
 
   web:
     name: Server web UI (React)
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/web } }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -75,7 +86,8 @@ jobs:
 
   images:
     name: Docker image (${{ matrix.image }})
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
     strategy:
       matrix:
         image: [api, web]
@@ -89,26 +101,19 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
+  # The runner is a Mac, so CI builds the macOS desktop app. Windows and Linux
+  # installers are built at release time (release.yml).
   desktop:
-    name: Desktop (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-22.04]
+    name: Desktop (macOS)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: desktop } }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
-        with: { toolchain: stable, components: "rustfmt, clippy" }
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { workspaces: desktop }
-      - name: Linux libraries for GPUI and the keychain
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libdbus-1-dev
+      # Uses the runner's installed Rust (rustup); no toolchain changes on the machine.
       - run: cargo fmt --check
-        if: runner.os == 'macOS'
       - run: cargo clippy --all-targets -- -D warnings
-        if: runner.os == 'macOS'
       - run: cargo test
       - run: cargo build --release
