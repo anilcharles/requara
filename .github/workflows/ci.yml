@@ -3,13 +3,13 @@ name: CI
 # Runs on the self-hosted runner (label "speklo"), in dependency order:
 #
 #   Secret scan
-#    ├─ Dependency vulnerabilities
-#    ├─ Server API (Go) ──── Docker image (api)
-#    ├─ Server web UI ────── Docker image (web)
-#    └─ Desktop (macOS)
+#    └─ Dependency vulnerabilities
+#        ├─ Server API (Go) ──── Docker image (api)
+#        ├─ Server web UI ────── Docker image (web)
+#        └─ Desktop (macOS)
 #
-# A leaked secret stops everything; an image is only built from code whose
-# checks passed. Jobs from pull requests
+# A leaked secret or a vulnerable dependency stops everything; an image is
+# only built from code whose checks passed. Jobs from pull requests
 # opened from forks are skipped, so outside code never runs on that machine.
 # (Fork PR workflows are also disabled in the repository's Actions settings.)
 on:
@@ -66,7 +66,7 @@ jobs:
 
   api:
     name: Server API (Go)
-    needs: secrets
+    needs: vulnerabilities
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/api } }
@@ -82,7 +82,7 @@ jobs:
 
   web:
     name: Server web UI (React)
-    needs: secrets
+    needs: vulnerabilities
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/web } }
@@ -130,7 +130,7 @@ jobs:
   # installers are built at release time (release.yml).
   desktop:
     name: Desktop (macOS)
-    needs: secrets
+    needs: vulnerabilities
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: desktop } }
