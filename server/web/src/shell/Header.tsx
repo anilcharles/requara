@@ -1,15 +1,15 @@
-import { DesktopOutlined, DownOutlined, MoonOutlined, SearchOutlined, SunOutlined } from "@ant-design/icons";
+import { Check, ChevronDown, Monitor, Moon, Plus, Search, Sun } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Dropdown, Input, Layout, Modal, theme, Tooltip, Typography } from "antd";
+import { App, Input, Modal, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get, isSignedIn, post, selectWorkspace, serverApi } from "../api";
 import { SignInModal } from "../components/SignInOptions";
 import { PERSONAL_ID } from "../personal/backend";
 import CopyToTeamModal from "./CopyToTeam";
-import { Kbd } from "../components/bits";
+import { Button, Kbd, Menu, type MenuItem } from "../ui";
 import CommandPalette from "./CommandPalette";
-import { useMe, usePrefs } from "./session";
+import { useEnvironments, useMe, usePrefs } from "./session";
 import ShareModal from "./ShareModal";
 
 export function Logo({ size = 22 }: { size?: number }) {
@@ -59,11 +59,11 @@ export function CreateWorkspaceModal({ open, onClose }: { open: boolean; onClose
 }
 
 export default function Header() {
-  const { token } = theme.useToken();
   const nav = useNavigate();
   const qc = useQueryClient();
   const me = useMe();
   const { prefs, isDark, setPrefs } = usePrefs();
+  const envs = useEnvironments();
   const mode = prefs.theme ?? "dark";
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: () => get<{ id: string; name: string; role: string }[]>("/api/workspaces") });
   const [palette, setPalette] = useState(false);
@@ -91,6 +91,8 @@ export default function Header() {
   }, [nav]);
 
   const current = workspaces.data?.find((w) => w.id === me.data?.workspaceId);
+  const envList = (envs.data?.items ?? []).filter((e) => !e.isGlobal);
+  const activeEnv = envList.find((e) => e.id === envs.data?.activeId);
 
   const signOut = async () => {
     const { logoutUrl } = await post<{ logoutUrl: string }>("/auth/logout");
@@ -98,129 +100,140 @@ export default function Header() {
     qc.clear();
     location.assign(logoutUrl);
   };
+  const switchWorkspace = (key: string) => {
+    if (key === "__new") return setCreating(true);
+    if (key === "__signin") return setSigningIn(true);
+    if (key === me.data?.workspaceId) return;
+    selectWorkspace(key);
+    // A team workspace is also remembered on the server, for the desktop app.
+    const saved = key === PERSONAL_ID ? Promise.resolve() : serverApi("/api/me/preferences", { method: "PATCH", json: { workspaceId: key } });
+    saved.finally(() => {
+      qc.removeQueries();
+      nav("/apis");
+    });
+  };
+  const ws = workspaces.data ?? [];
+  const check = (on: boolean) => <Check style={{ visibility: on ? "visible" : "hidden" }} />;
 
   return (
-    <Layout.Header style={{ display: "flex", alignItems: "center", gap: 16, lineHeight: "normal" }}>
+    <header style={{ height: 44, flexShrink: 0, display: "flex", alignItems: "center", gap: 12, padding: "0 12px 0 14px", background: "var(--rq-frame)" }}>
       {/* Brand and workspace fill the sidebar's column; search starts where the canvas starts. */}
-      <div style={{ width: 236, flexShrink: 0, display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-      <a onClick={() => nav("/apis")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-        <Logo />
-        <Typography.Text strong style={{ fontSize: 16, letterSpacing: -0.2 }}>
+      <div style={{ width: 234, flexShrink: 0, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <a onClick={() => nav("/apis")} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", flexShrink: 0, color: "var(--rq-text)", fontWeight: 600, fontSize: 14, letterSpacing: -0.1 }}>
+          <Logo size={20} />
           Requara
-        </Typography.Text>
-      </a>
-      <Dropdown
-        trigger={["click"]}
-        menu={{
-          selectable: true,
-          selectedKeys: me.data ? [me.data.workspaceId] : [],
-          items: [
-            { type: "group" as const, label: "Personal", children: (workspaces.data ?? []).filter((w) => w.id === PERSONAL_ID).map((w) => ({ key: w.id, label: w.name, extra: "only you" })) },
-            signedIn
-              ? { type: "group" as const, label: "Team workspaces", children: (workspaces.data ?? []).filter((w) => w.id !== PERSONAL_ID).map((w) => ({ key: w.id, label: w.name, extra: w.role })) }
-              : { type: "group" as const, label: "Team workspaces", children: [{ key: "__signin", label: "Sign in to your organization…" }] },
-            ...(signedIn && instance.data?.allowWorkspaceCreation ? [{ type: "divider" as const }, { key: "__new", label: "New team workspace…" }] : []),
-          ],
-          onClick: ({ key }) => {
-            if (key === "__new") return setCreating(true);
-            if (key === "__signin") return setSigningIn(true);
-            if (key === me.data?.workspaceId) return;
-            selectWorkspace(key);
-            // A team workspace is also remembered on the server, for the desktop app.
-            const saved = key === PERSONAL_ID ? Promise.resolve() : serverApi("/api/me/preferences", { method: "PATCH", json: { workspaceId: key } });
-            saved.finally(() => {
-              qc.removeQueries();
-              nav("/apis");
-            });
-          },
-        }}
-      >
-        <Button type="text" style={{ fontWeight: 500, minWidth: 0, overflow: "hidden" }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{current?.name ?? "Workspace"}</span> <DownOutlined style={{ fontSize: 10, color: token.colorTextTertiary }} />
-        </Button>
-      </Dropdown>
+        </a>
+        <span style={{ flex: 1 }} />
+        <Menu
+          align="end"
+          trigger={
+            <Button variant="ghost" style={{ minWidth: 0, maxWidth: 140 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{current?.name ?? "Workspace"}</span>
+              <ChevronDown style={{ width: 12, height: 12 }} />
+            </Button>
+          }
+          items={[
+            { type: "label", key: "l1", label: "Personal" },
+            ...ws.filter((w) => w.id === PERSONAL_ID).map((w) => ({ key: w.id, label: w.name, icon: check(w.id === me.data?.workspaceId), end: "only you" })),
+            { type: "label", key: "l2", label: "Team workspaces" },
+            ...(signedIn
+              ? ws.filter((w) => w.id !== PERSONAL_ID).map((w) => ({ key: w.id, label: w.name, icon: check(w.id === me.data?.workspaceId), end: w.role }))
+              : [{ key: "__signin", label: "Sign in to your organization…", icon: check(false) }]),
+            ...(signedIn && instance.data?.allowWorkspaceCreation ? ([{ type: "separator", key: "s" }, { key: "__new", label: "New team workspace…", icon: <Plus /> }] as MenuItem[]) : []),
+          ]}
+          onSelect={switchWorkspace}
+        />
       </div>
-      <Button
+      <button
+        type="button"
         onClick={() => setPalette(true)}
-        style={{ width: 360, height: 30, justifyContent: "flex-start", color: token.colorTextPlaceholder, display: "flex", alignItems: "center", gap: 8, background: token.colorFillTertiary, border: "none" }}
+        className="rq-input"
+        style={{ width: 360, display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "var(--rq-mute)", textAlign: "left" }}
       >
-        <SearchOutlined />
-        <span style={{ flex: 1, textAlign: "left" }}>Search requests and APIs</span>
+        <Search style={{ width: 14, height: 14 }} />
+        <span style={{ flex: 1 }}>Search requests and APIs</span>
         <Kbd>⌘K</Kbd>
-      </Button>
+      </button>
       <div style={{ flex: 1 }} />
-      <Dropdown
-        trigger={["click"]}
-        placement="bottomRight"
-        menu={{
-          selectable: true,
-          selectedKeys: [mode],
-          items: [
-            { key: "light", icon: <SunOutlined />, label: "Light" },
-            { key: "dark", icon: <MoonOutlined />, label: "Dark" },
-            { key: "system", icon: <DesktopOutlined />, label: "Match system" },
-          ],
-          onClick: ({ key }) => setPrefs({ theme: key as "light" | "dark" | "system" }),
-        }}
-      >
-        <Tooltip title={`Theme: ${mode === "system" ? `system (${isDark ? "dark" : "light"})` : mode}`} placement="bottom">
-          <Button type="text" aria-label="Change theme" icon={mode === "system" ? <DesktopOutlined /> : isDark ? <MoonOutlined /> : <SunOutlined />} />
-        </Tooltip>
-      </Dropdown>
+      {envList.length > 0 && (
+        <Menu
+          align="end"
+          trigger={
+            <Button style={{ borderColor: "var(--rq-line)", color: "var(--rq-dim)" }} aria-label="Environment">
+              <span className="rq-dot" style={{ background: activeEnv?.color || "var(--rq-mute)" }} />
+              {activeEnv?.name ?? "No environment"}
+              <ChevronDown style={{ width: 12, height: 12, color: "var(--rq-mute)" }} />
+            </Button>
+          }
+          items={[
+            { type: "label", key: "l", label: "Environment" },
+            ...envList.map((e) => ({ key: e.id, label: e.name, icon: <span className="rq-dot" style={{ background: e.color || "var(--rq-mute)", margin: "0 3px" }} />, end: e.id === activeEnv?.id ? <Check style={{ width: 13, height: 13 }} /> : undefined })),
+            { type: "separator", key: "s" },
+            { key: "__manage", label: "Manage environments" },
+          ]}
+          onSelect={(k) => (k === "__manage" ? nav("/environments") : setPrefs({ activeEnvironmentId: k }))}
+        />
+      )}
+      <Menu
+        align="end"
+        trigger={<Button variant="ghost" icon={mode === "system" ? <Monitor /> : isDark ? <Moon /> : <Sun />} aria-label="Theme" />}
+        items={[
+          { key: "dark", label: "Dark", icon: <Moon />, end: mode === "dark" ? <Check style={{ width: 13, height: 13 }} /> : undefined },
+          { key: "light", label: "Light", icon: <Sun />, end: mode === "light" ? <Check style={{ width: 13, height: 13 }} /> : undefined },
+          { key: "system", label: "Match system", icon: <Monitor />, end: mode === "system" ? <Check style={{ width: 13, height: 13 }} /> : undefined },
+        ]}
+        onSelect={(k) => setPrefs({ theme: k as "light" | "dark" | "system" })}
+      />
       {!personal ? (
-        <Button onClick={() => setShare(true)}>Share</Button>
+        <Button variant="ghost" onClick={() => setShare(true)}>
+          Share
+        </Button>
       ) : signedIn ? (
-        <Button onClick={() => setCopying(true)}>Copy to team workspace</Button>
+        <Button variant="ghost" onClick={() => setCopying(true)}>
+          Copy to team workspace
+        </Button>
       ) : (
-        <Button size="small" onClick={() => setSigningIn(true)}>
+        <Button variant="ghost" onClick={() => setSigningIn(true)}>
           Sign in
         </Button>
       )}
-      <Dropdown
-        trigger={["click"]}
-        placement="bottomRight"
-        menu={{
-          items: [
-            {
-              key: "who",
-              disabled: true,
-              label: (
-                <div style={{ padding: "2px 0" }}>
-                  <div style={{ color: token.colorText, fontWeight: 500 }}>{me.data?.name}</div>
-                  <div style={{ fontSize: 12, color: token.colorTextTertiary }}>
-                    {signedIn ? `${me.data?.email} · ${personal ? "My workspace" : me.data?.memberRole}` : "Not signed in · My workspace is kept in this browser"}
-                  </div>
-                </div>
-              ),
-            },
-            { type: "divider" },
-            ...(signedIn
-              ? [
-                  { key: "/settings/profile", label: "Profile" },
-                  { key: "/settings/keys", label: "API keys" },
-                  { key: "/settings/preferences", label: "Preferences", extra: "⌘," },
-                  ...(me.data?.isAdmin ? [{ type: "divider" as const }, { key: "/admin/overview", label: "Admin console" }] : []),
-                  { type: "divider" as const },
-                  { key: "signout", label: "Sign out", danger: true },
-                ]
-              : [
-                  { key: "/settings/preferences", label: "Preferences", extra: "⌘," },
-                  { type: "divider" as const },
-                  { key: "signin", label: "Sign in to your organization" },
-                ]),
-          ],
-          onClick: ({ key }) => (key === "signout" ? signOut() : key === "signin" ? setSigningIn(true) : nav(key)),
-        }}
-      >
-        <Avatar size={28} style={{ background: token.colorPrimaryBg, color: token.colorPrimaryText, cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-          {me.data ? initials(me.data.name) : ""}
-        </Avatar>
-      </Dropdown>
+      <Menu
+        align="end"
+        trigger={
+          <button type="button" aria-label="Account" style={{ width: 24, height: 24, borderRadius: "50%", border: 0, background: "#20304A", color: "#9CC3FF", fontSize: 10.5, fontWeight: 600, cursor: "pointer", marginLeft: 2, fontFamily: "inherit" }}>
+            {me.data ? initials(me.data.name) : ""}
+          </button>
+        }
+        items={[
+          {
+            type: "label",
+            key: "who",
+            label: (
+              <div>
+                <div style={{ color: "var(--rq-text)", fontWeight: 500, fontSize: 13 }}>{me.data?.name}</div>
+                <div>{signedIn ? `${me.data?.email} · ${personal ? "My workspace" : me.data?.memberRole}` : "Not signed in · kept in this browser"}</div>
+              </div>
+            ),
+          },
+          { type: "separator", key: "s1" },
+          ...((signedIn
+            ? [
+                { key: "/settings/profile", label: "Profile" },
+                { key: "/settings/keys", label: "API keys" },
+                { key: "/settings/preferences", label: "Preferences", end: "⌘," },
+                ...(me.data?.isAdmin ? [{ type: "separator", key: "s2" }, { key: "/admin/overview", label: "Admin console" }] : []),
+                { type: "separator", key: "s3" },
+                { key: "signout", label: "Sign out", danger: true },
+              ]
+            : [{ key: "/settings/preferences", label: "Preferences", end: "⌘," }, { type: "separator", key: "s4" }, { key: "signin", label: "Sign in to your organization" }]) as MenuItem[]),
+        ]}
+        onSelect={(k) => (k === "signout" ? signOut() : k === "signin" ? setSigningIn(true) : nav(k))}
+      />
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <ShareModal open={share} onClose={() => setShare(false)} />
       <CreateWorkspaceModal open={creating} onClose={() => setCreating(false)} />
       <SignInModal open={signingIn} onClose={() => setSigningIn(false)} />
       <CopyToTeamModal open={copying} onClose={() => setCopying(false)} />
-    </Layout.Header>
+    </header>
   );
 }

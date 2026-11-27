@@ -16,6 +16,7 @@ import SignIn from "./pages/SignIn";
 import SignInEmail from "./pages/SignInEmail";
 import { AppLayout, PageLayout, WorkspaceLayout } from "./shell/Layouts";
 import { PrefsProvider } from "./shell/session";
+import { TooltipProvider } from "./ui";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./styles.css";
@@ -27,6 +28,7 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <PrefsProvider>
+          <TooltipProvider>
           <Routes>
             <Route path="/signin" element={<SignIn />} />
             <Route path="/signin/email" element={<SignInEmail />} />
@@ -50,6 +52,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="*" element={<Navigate to="/apis" replace />} />
             </Route>
           </Routes>
+          </TooltipProvider>
         </PrefsProvider>
       </BrowserRouter>
     </QueryClientProvider>

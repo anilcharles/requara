@@ -36,7 +36,7 @@ function useSystemDark() {
 // Dark surfaces: the window chrome (header, rail, sidebar) a step darker than
 // the page, and panels on top, like Postman's dark theme.
 // Near-black window frame; the work canvas one step lighter.
-const DARK = { chrome: "#0E0E10", page: "#0E0E10", panel: "#161618" };
+const DARK = { chrome: "#0B0B0C", page: "#0B0B0C", panel: "#131315" }; // = --rq-frame / --rq-canvas
 
 export function PrefsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -68,6 +68,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+    document.documentElement.dataset.theme = isDark ? "dark" : "light"; // src/ui colours
     document.body.style.background = isDark ? DARK.page : "#F5F5F5";
   }, [isDark]);
 
@@ -85,7 +86,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
             fontFamilyCode: "\'Geist Mono Variable\', ui-monospace, Menlo, monospace",
             // One calm charcoal family instead of black and grey patches.
             ...(isDark
-              ? { colorBgLayout: DARK.page, colorBgContainer: DARK.panel, colorBgElevated: "#1E1E21", colorBorder: "#2E2E33", colorBorderSecondary: "#232327", colorSplit: "#232327", colorText: "#EDEDEF", colorTextSecondary: "#A0A0A8", colorTextTertiary: "#6F6F78", colorFillTertiary: "rgba(255,255,255,0.05)", colorLink: "#7AB0FF", controlItemBgActive: "#1F1F23", controlItemBgActiveHover: "#232327" }
+              ? { colorBgLayout: DARK.page, colorBgContainer: DARK.panel, colorBgElevated: "#1C1C1F", colorBorder: "#2C2C30", colorBorderSecondary: "#232326", colorSplit: "#232326", colorText: "#EDEDEF", colorTextSecondary: "#A1A1A9", colorTextTertiary: "#6B6B74", colorFillTertiary: "rgba(255,255,255,0.05)", colorLink: "#7AB0FF", controlItemBgActive: "#1A1A1D", controlItemBgActiveHover: "#1E1E21" }
               : {}),
           },
           components: {
