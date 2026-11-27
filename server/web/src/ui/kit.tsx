@@ -935,14 +935,14 @@ export function Table<T = any>({ columns = [], dataSource = [], rowKey = "key", 
   const get = (r: any, di?: string | string[]) => (di === undefined ? undefined : Array.isArray(di) ? di.reduce((o, k) => o?.[k], r) : r?.[di]);
   const hide = pagination !== false && pagination?.hideOnSinglePage && pages <= 1;
   return (
-    <div style={style}>
+    <div style={{ overflowX: "auto", ...style }}>
       <table className={cx("rq-table", size === "small" && "rq-table--sm")}>
         {showHeader && (
           <thead>
             <tr>
               {expandable && <th style={{ width: 28 }} />}
               {cols.map((c, i) => (
-                <th key={c.key ?? i} style={{ width: c.width, textAlign: c.align }}>
+                <th key={c.key ?? i} style={{ width: c.width, minWidth: c.width ?? 220, textAlign: c.align }}>
                   {c.title}
                 </th>
               ))}

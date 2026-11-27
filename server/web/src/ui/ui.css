@@ -438,3 +438,5 @@ a { color: var(--rq-var); }
 .rq-tr-click { cursor: pointer; }
 .rq-tr-click:hover td, .rq-table tbody tr:hover td { background: color-mix(in srgb, var(--rq-hover) 60%, transparent); }
 .rq-tr-expanded td { background: var(--rq-raise); }
+
+a.rq-btn { text-decoration: none; }
