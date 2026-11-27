@@ -126,7 +126,8 @@ function Workspace({ id }: { id: string }) {
 
   return (
     <Layout.Content style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 40, padding: "6px 12px 0", background: token.colorBgLayout, borderBottom: `1px solid ${token.colorSplit}` }}>
+      {/* Open requests: soft pills on the canvas itself, starting on the content's left edge. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, height: 44, padding: "0 16px", borderBottom: `1px solid ${token.colorSplit}` }}>
         {visible.map((t) => {
           const r = byId.get(t);
           const active = t === id;
@@ -138,13 +139,11 @@ function Workspace({ id }: { id: string }) {
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                height: 34,
-                padding: "0 10px 0 14px",
+                height: 28,
+                padding: "0 8px",
                 cursor: "pointer",
-                borderRadius: "8px 8px 0 0",
-                background: active ? token.colorBgContainer : undefined,
-                border: active ? `1px solid ${token.colorSplit}` : "1px solid transparent",
-                borderBottom: "none",
+                borderRadius: 7,
+                background: active ? token.controlItemBgActive : undefined,
                 color: active ? token.colorText : token.colorTextSecondary,
                 maxWidth: 240,
               }}
@@ -492,7 +491,7 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
         <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, color: token.colorTextTertiary, letterSpacing: 0.1 }}>
-              {where?.api ?? "Requests"} <span style={{ margin: "0 4px", opacity: 0.6 }}>/</span> {where?.folder || "Scratch"}
+              {[...new Set([where?.api ?? "Requests", where?.folder || "Scratch"])].join("  /  ")}
             </div>
             <Input
               variant="borderless"
@@ -516,7 +515,7 @@ function Editor({ id, where }: { id: string; where?: { api: string; folder: stri
             <Select
               value={draft.method}
               onChange={(method) => set({ method })}
-              style={{ width: 120 }}
+              style={{ width: 92 }}
               labelRender={(o) => <span style={{ ...mono, fontWeight: 700, color: methodColor[String(o.value)] }}>{o.value}</span>}
               options={METHODS.map((m) => ({ value: m, label: <span style={{ ...mono, fontWeight: 700, color: methodColor[m] }}>{m}</span> }))}
             />

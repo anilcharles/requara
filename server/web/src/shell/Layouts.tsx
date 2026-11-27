@@ -1,4 +1,4 @@
-import { ApiOutlined, CaretDownOutlined, CaretRightOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, SendOutlined, SlidersOutlined } from "@ant-design/icons";
+import { ApiOutlined, ClockCircleOutlined, CodeOutlined, DashboardOutlined, DownOutlined, FilterOutlined, GlobalOutlined, PlusOutlined, RightOutlined, SendOutlined, SlidersOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Dropdown, Input, Layout, Result, Spin, theme, Tooltip } from "antd";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -277,8 +277,8 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
         display: "flex",
         alignItems: "center",
         gap: 8,
-        height: 32,
-        padding: `0 8px 0 ${8 + depth * 16}px`,
+        height: 30,
+        padding: `0 8px 0 ${10 + depth * 14}px`,
         borderRadius: 6,
         cursor: "pointer",
         background: selected ? token.controlItemBgActive : undefined,
@@ -288,7 +288,7 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
       {content}
     </div>
   );
-  const caret = (o: boolean) => (o ? <CaretDownOutlined style={{ fontSize: 10, color: token.colorTextTertiary, width: 12 }} /> : <CaretRightOutlined style={{ fontSize: 10, color: token.colorTextTertiary, width: 12 }} />);
+  const caret = (o: boolean) => (o ? <DownOutlined style={{ fontSize: 9, color: token.colorTextTertiary, width: 14 }} /> : <RightOutlined style={{ fontSize: 9, color: token.colorTextTertiary, width: 14 }} />);
   return (
     <Layout.Sider width={260} style={{ display: "flex", flexDirection: "column", background: "transparent" }}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -320,8 +320,8 @@ export function CollectionsSider({ onPick, isSelected }: SiderProps) {
             </Tooltip>
           </Dropdown>
         </div>
-        <div style={{ padding: "0 12px 8px" }}>
-          <Input size="small" allowClear prefix={<FilterOutlined style={{ color: token.colorTextTertiary }} />} placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <div style={{ padding: "0 8px 6px" }}>
+          <Input size="small" variant="filled" allowClear prefix={<FilterOutlined style={{ color: token.colorTextTertiary }} />} placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 8px" }}>
           {cols.isLoading && <Spin size="small" style={{ margin: 16 }} />}

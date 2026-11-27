@@ -1,6 +1,6 @@
 import { DesktopOutlined, DownOutlined, MoonOutlined, SearchOutlined, SunOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Divider, Dropdown, Input, Layout, Modal, theme, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Dropdown, Input, Layout, Modal, theme, Tooltip, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get, isSignedIn, post, selectWorkspace, serverApi } from "../api";
@@ -101,13 +101,14 @@ export default function Header() {
 
   return (
     <Layout.Header style={{ display: "flex", alignItems: "center", gap: 16, lineHeight: "normal" }}>
+      {/* Brand and workspace fill the sidebar's column; search starts where the canvas starts. */}
+      <div style={{ width: 236, flexShrink: 0, display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
       <a onClick={() => nav("/apis")} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
         <Logo />
         <Typography.Text strong style={{ fontSize: 16, letterSpacing: -0.2 }}>
           Requara
         </Typography.Text>
       </a>
-      <Divider type="vertical" style={{ height: 16, margin: 0 }} />
       <Dropdown
         trigger={["click"]}
         menu={{
@@ -134,11 +135,11 @@ export default function Header() {
           },
         }}
       >
-        <Button type="text" style={{ fontWeight: 500 }}>
-          {current?.name ?? "Workspace"} <DownOutlined style={{ fontSize: 10, color: token.colorTextTertiary }} />
+        <Button type="text" style={{ fontWeight: 500, minWidth: 0, overflow: "hidden" }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{current?.name ?? "Workspace"}</span> <DownOutlined style={{ fontSize: 10, color: token.colorTextTertiary }} />
         </Button>
       </Dropdown>
-      <div style={{ flex: 1 }} />
+      </div>
       <Button
         onClick={() => setPalette(true)}
         style={{ width: 360, height: 30, justifyContent: "flex-start", color: token.colorTextPlaceholder, display: "flex", alignItems: "center", gap: 8, background: token.colorFillTertiary, border: "none" }}

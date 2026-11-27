@@ -1,5 +1,5 @@
-import { CheckCircleFilled, CloseCircleFilled, CopyOutlined, LoadingOutlined } from "@ant-design/icons";
-import { Alert, App, Button, Divider, Empty, Skeleton, Space, Tabs, theme, Tooltip, Typography } from "antd";
+import { CheckCircleFilled, CloseCircleFilled, CopyOutlined, EllipsisOutlined, LoadingOutlined } from "@ant-design/icons";
+import { Alert, App, Button, Dropdown, Empty, Skeleton, Space, Tabs, theme, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import type { SendResult } from "../../api";
 import { mono, StatusTag } from "../../components/bits";
@@ -45,29 +45,31 @@ export default function ResponsePane({ result: raw, sending, onCancel, onSaveExa
       </Button>
     </Space>
   ) : result ? (
-    <Space size={10} split={<Divider type="vertical" style={{ margin: 0 }} />}>
+    <Space size={12}>
       <StatusTag status={result.status} text={result.statusText} />
       <Typography.Text type="secondary" style={{ fontVariantNumeric: "tabular-nums" }}>
         {result.durationMs} ms
       </Typography.Text>
       <Typography.Text type="secondary">{bytes(result.sizeBytes)}</Typography.Text>
-      <Tooltip title="Copy response">
-        <Button
-          type="text"
-          size="small"
-          icon={<CopyOutlined />}
-          aria-label="Copy response"
-          onClick={() => {
-            navigator.clipboard.writeText(result.body);
-            message.success("Response copied");
-          }}
-        />
-      </Tooltip>
-      {onSaveExample && result.status > 0 && (
-        <Button type="text" size="small" onClick={() => onSaveExample(result)}>
-          Save as example
-        </Button>
-      )}
+      <Dropdown
+        trigger={["click"]}
+        placement="bottomRight"
+        menu={{
+          items: [
+            { key: "copy", icon: <CopyOutlined />, label: "Copy response" },
+            ...(onSaveExample && result.status > 0 ? [{ key: "example", label: "Save as example" }] : []),
+          ],
+          onClick: ({ key }) => {
+            if (key === "copy") {
+              navigator.clipboard.writeText(result.body);
+              message.success("Response copied");
+            }
+            if (key === "example") onSaveExample?.(result);
+          },
+        }}
+      >
+        <Button type="text" size="small" aria-label="Response actions" icon={<EllipsisOutlined />} />
+      </Dropdown>
     </Space>
   ) : null;
 
@@ -194,13 +196,14 @@ export default function ResponsePane({ result: raw, sending, onCancel, onSaveExa
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "0 24px 20px" }}>
-      {/* The outcome first, on its own line; the tabs below it. */}
-      <div style={{ height: 30, display: "flex", alignItems: "center", marginTop: 6 }}>{meta ?? <Typography.Text type="secondary">Response</Typography.Text>}</div>
+      {/* Same row height as the request's tabs, so the two halves line up. */}
       <Tabs
         activeKey={tab}
         onChange={setTab}
+        tabBarExtraContent={meta}
+        tabBarGutter={20}
         items={[
-          { key: "body", label: "Response" },
+          { key: "body", label: "Body" },
           ...(events.length ? [{ key: "events", label: <span>Events <Typography.Text type="secondary" style={{ fontSize: 12 }}>{events.length}</Typography.Text></span> }] : []),
           { key: "headers", label: <span>Headers {result && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{result.headers.length}</Typography.Text>}</span> },
           {
@@ -210,7 +213,7 @@ export default function ResponsePane({ result: raw, sending, onCancel, onSaveExa
                 Tests{" "}
                 {tests.length > 0 && (
                   <span style={{ fontSize: 12, color: passed === tests.length ? "#389E0D" : token.colorError }}>
-                    {passed}/{tests.length} passed
+                    {passed}/{tests.length}
                   </span>
                 )}
               </span>
