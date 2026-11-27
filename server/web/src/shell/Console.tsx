@@ -1,5 +1,5 @@
-import { CaretDownOutlined, CaretRightOutlined, ClearOutlined, CloseOutlined, CodeOutlined, SearchOutlined } from "@ant-design/icons";
-import { Badge, Button, Empty, Input, Segmented, Tabs, theme, Tooltip, Typography } from "antd";
+import { CaretDownOutlined, CaretRightOutlined, ClearOutlined, CloseOutlined, CodeOutlined, SearchOutlined } from "../ui/icons";
+import { Badge, Button, Empty, Input, Segmented, Tabs, theme, Tooltip, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { KV } from "../api";
@@ -12,8 +12,8 @@ type Line =
   | { kind: "net"; key: string; e: ConsoleEntry }
   | { kind: "log" | "warn" | "error"; key: string; e: ConsoleEntry; text: string };
 
-const HEIGHT_KEY = "speklo.consoleHeight";
-const OPEN_KEY = "speklo.consoleOpen";
+const HEIGHT_KEY = "requara.consoleHeight";
+const OPEN_KEY = "requara.consoleOpen";
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -213,7 +213,7 @@ function NetRow({ e, open, onToggle }: { e: ConsoleEntry; open: boolean; onToggl
   const r = e.result;
   return (
     <div style={{ borderBottom: `1px solid ${token.colorSplit}` }}>
-      <div onClick={onToggle} className="speklo-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 12px", cursor: "pointer" }}>
+      <div onClick={onToggle} className="requara-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 12px", cursor: "pointer" }}>
         <Time at={e.at} />
         {open ? <CaretDownOutlined style={{ fontSize: 10, width: 14, color: token.colorTextTertiary }} /> : <CaretRightOutlined style={{ fontSize: 10, width: 14, color: token.colorTextTertiary }} />}
         <Method method={e.method} width={34} />

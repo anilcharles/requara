@@ -1,4 +1,4 @@
-// Package spec holds Speklo's OpenAPI logic: parsing (including Swagger 2.0),
+// Package spec holds Requara's OpenAPI logic: parsing (including Swagger 2.0),
 // listing operations, flattening and editing request-body fields, examples,
 // linting (vacuum), change detection (oasdiff) and code samples.
 package spec

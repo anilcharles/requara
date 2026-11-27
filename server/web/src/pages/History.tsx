@@ -1,6 +1,6 @@
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Drawer, Input, Select, Space, Spin, Table, theme, Typography } from "antd";
+import { App, Button, Drawer, Input, Select, Space, Spin, Table, theme, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";

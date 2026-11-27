@@ -2,6 +2,8 @@ package sandbox
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +62,73 @@ func TestMemoryLimit(t *testing.T) {
 	}
 	if out.Error == "" {
 		t.Fatal("expected an out-of-memory error")
+	}
+}
+
+// Scripts must not see the server's files or the QuickJS std/os modules.
+func TestNoFilesystem(t *testing.T) {
+	for _, script := range []string{
+		`console.log(typeof std, typeof os)`,
+		`console.log(String(globalThis.std && std.loadFile('/sandbox.go')))`,
+	} {
+		out, err := Run(context.Background(), script, Input{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range out.Logs {
+			if strings.Contains(l, "package sandbox") || strings.Contains(l, "object") {
+				t.Fatalf("%s: script reached the filesystem: %q", script, out.Logs)
+			}
+		}
+	}
+	dir, err := emptyRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("sandbox root %s isn't empty", dir)
+	}
+}
+
+// Postman scripts run unchanged: pm.*, Chai-style expect and the legacy globals.
+func TestPostmanScripts(t *testing.T) {
+	in := Input{
+		Request:  Request{Method: "GET", URL: "https://x.test/a", Headers: map[string]string{"Accept": "application/json"}},
+		Response: &Response{Status: 200, Headers: map[string]string{"content-type": "application/json"}, Body: `{"id":"o1","items":[1,2],"ok":true}`, Time: 42},
+		Env:      map[string]string{"base": "https://x.test"},
+	}
+	out, err := Run(context.Background(), `
+pm.test("status", () => pm.response.to.have.status(200));
+pm.test("ok", () => pm.response.to.be.ok);
+pm.test("json", () => { const b = pm.response.json(); pm.expect(b.id).to.equal("o1"); pm.expect(b.items).to.have.lengthOf(2); pm.expect(b).to.have.property("ok", true); pm.expect(b.items).to.include(2); });
+pm.test("header", () => pm.response.to.have.header("Content-Type"));
+pm.test("time", () => pm.expect(pm.response.responseTime).to.be.below(1000));
+pm.test("not", () => pm.expect(1).to.not.equal(2));
+pm.test("fails", () => pm.expect("a").to.be.a("number"));
+pm.environment.set("orderId", pm.response.json().id);
+pm.collectionVariables.set("seen", pm.variables.get("base"));
+tests["legacy"] = responseCode.code === 200;
+`, in)
+	if err != nil || out.Error != "" {
+		t.Fatalf("%v %q", err, out.Error)
+	}
+	got := map[string]bool{}
+	for _, tr := range out.Tests {
+		got[tr.Name] = tr.Pass
+	}
+	for _, name := range []string{"status", "ok", "json", "header", "time", "not", "legacy"} {
+		if !got[name] {
+			t.Errorf("%s should pass: %+v", name, out.Tests)
+		}
+	}
+	if got["fails"] {
+		t.Error("a failing assertion passed")
+	}
+	if out.Env["orderId"] != "o1" || out.Env["seen"] != "https://x.test" {
+		t.Errorf("env: %v", out.Env)
+	}
+	pre, _ := Run(context.Background(), `pm.request.headers.add({key: "X-Trace", value: pm.variables.replaceIn("{{base}}/t")});`, Input{Request: in.Request, Env: in.Env})
+	if pre.Request.Headers["X-Trace"] != "https://x.test/t" {
+		t.Errorf("pre-request header: %v", pre.Request.Headers)
 	}
 }

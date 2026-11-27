@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Input, Modal, Select, Space, Tag, theme, Typography } from "antd";
+import { App, Avatar, Button, Input, Modal, Select, Space, Tag, theme, Typography } from "../ui/kit";
 import { useState } from "react";
-import { get, post, type Member } from "../api";
+import { del, get, patch, post, type Member } from "../api";
 import { initials } from "./Header";
 import { useMe } from "./session";
 
@@ -30,6 +30,19 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
     onError: (e: Error) => message.error(e.message),
   });
   const isOwner = me.data?.memberRole === "owner";
+  const refresh = () => qc.invalidateQueries({ queryKey: ["members"] });
+  const change = useMutation({
+    mutationFn: ({ m, role }: { m: Member; role: string }) =>
+      role === "remove"
+        ? m.pending
+          ? del(`/api/members/invite?email=${encodeURIComponent(m.email)}`)
+          : del(`/api/members/${encodeURIComponent(m.userId)}`)
+        : m.pending
+          ? post("/api/members/invite", { email: m.email, role })
+          : patch(`/api/members/${encodeURIComponent(m.userId)}`, { role }),
+    onSuccess: refresh,
+    onError: (e: Error) => message.error(e.message),
+  });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: () => get<{ id: string; name: string; role: string }[]>("/api/workspaces") });
   const wsName = workspaces.data?.find((w) => w.id === me.data?.workspaceId)?.name;
 
@@ -62,7 +75,7 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
           onChange={(e) => setEmail(e.target.value)}
           onPressEnter={() => email && invite.mutate()}
         />
-        <Select value={role} onChange={setRole} disabled={!isOwner} style={{ width: 120 }} options={[{ value: "editor", label: "Can edit" }, { value: "viewer", label: "Can view" }]} />
+        <Select value={role} onChange={setRole} disabled={!isOwner} style={{ width: 120 }} options={[{ value: "owner", label: "Owner" }, { value: "editor", label: "Can edit" }, { value: "viewer", label: "Can view" }]} />
         <Button type="primary" disabled={!isOwner || !email} loading={invite.isPending} onClick={() => invite.mutate()}>
           Invite
         </Button>
@@ -84,7 +97,23 @@ export default function ShareModal({ open, onClose }: { open: boolean; onClose: 
                 <div style={{ fontSize: 12, color: token.colorTextTertiary }}>{m.email}</div>
               </div>
               {m.pending && <Tag>Invited</Tag>}
-              <Typography.Text type="secondary">{m.role === "owner" ? "Owner" : m.role === "editor" ? "Can edit" : "Can view"}</Typography.Text>
+              {isOwner && m.email !== me.data?.email ? (
+                <Select
+                  size="small"
+                  variant="borderless"
+                  value={m.role}
+                  style={{ width: 120 }}
+                  onChange={(role) => change.mutate({ m, role })}
+                  options={[
+                    { value: "owner", label: "Owner" },
+                    { value: "editor", label: "Can edit" },
+                    { value: "viewer", label: "Can view" },
+                    { value: "remove", label: <span style={{ color: token.colorError }}>{m.pending ? "Cancel invite" : "Remove"}</span> },
+                  ]}
+                />
+              ) : (
+                <Typography.Text type="secondary">{m.role === "owner" ? "Owner" : m.role === "editor" ? "Can edit" : "Can view"}</Typography.Text>
+              )}
             </div>
           );
         })}

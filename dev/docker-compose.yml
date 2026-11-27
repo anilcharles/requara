@@ -1,21 +1,21 @@
-# Local infrastructure for Speklo development.
-# Keycloak here is only the local test identity provider: Speklo itself works
+# Local infrastructure for Requara development.
+# Keycloak here is only the local test identity provider: Requara itself works
 # with any OpenID Connect provider (see server/deploy/README.md).
 # OpenBao runs on the host in dev mode (see scripts/dev-up.sh) so it can reach
 # Keycloak at the same issuer URL the browser uses (http://localhost:8081).
-name: speklo
+name: requara
 
 services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: speklo
-      POSTGRES_PASSWORD: speklo
-      POSTGRES_DB: speklo
+      POSTGRES_USER: requara
+      POSTGRES_PASSWORD: requara
+      POSTGRES_DB: requara
     ports: ["5433:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U speklo"]
+      test: ["CMD-SHELL", "pg_isready -U requara"]
       interval: 3s
       retries: 20
 

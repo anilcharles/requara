@@ -2,8 +2,10 @@ import Editor, { loader, type OnMount } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
+import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
+import CssWorker from "monaco-editor/language/css/css.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
-import { theme } from "antd";
+import { theme } from "../ui/kit";
 import { useEffect, useRef, useState } from "react";
 import { usePrefs } from "../shell/session";
 
@@ -12,6 +14,9 @@ self.MonacoEnvironment = {
   getWorker(_id: string, label: string) {
     if (label === "json") return new JsonWorker();
     if (label === "typescript" || label === "javascript") return new TsWorker();
+    // HTML and XML responses: without their worker Monaco throws on every open.
+    if (label === "html" || label === "handlebars" || label === "razor") return new HtmlWorker();
+    if (label === "css" || label === "scss" || label === "less") return new CssWorker();
     return new EditorWorker();
   },
 };
@@ -22,7 +27,7 @@ function defineThemes() {
   if (themesDefined) return;
   themesDefined = true;
   // Syntax colours from Ant Design's palette, matching the Figma design.
-  monaco.editor.defineTheme("speklo-light", {
+  monaco.editor.defineTheme("requara-light", {
     base: "vs",
     inherit: true,
     rules: [
@@ -36,18 +41,26 @@ function defineThemes() {
     ],
     colors: { "editor.background": "#FFFFFF", "editorLineNumber.foreground": "#BFBFBF", "editorGutter.background": "#FAFAFA" },
   });
-  monaco.editor.defineTheme("speklo-dark", {
+  monaco.editor.defineTheme("requara-dark", {
     base: "vs-dark",
     inherit: true,
     rules: [
-      { token: "string.key.json", foreground: "69B1FF" },
-      { token: "string.value.json", foreground: "95DE64" },
-      { token: "number", foreground: "FFC069" },
+      { token: "string.key.json", foreground: "9CC3FF" },
+      { token: "string.value.json", foreground: "A8E6B8" },
+      { token: "number", foreground: "F2C38B" },
       { token: "keyword.json", foreground: "FF85C0" },
       { token: "string", foreground: "95DE64" },
-      { token: "keyword", foreground: "FF85C0" },
+      { token: "keyword", foreground: "5CD6C0" },
     ],
-    colors: { "editor.background": "#141414", "editorGutter.background": "#1A1A1A" },
+    // The canvas's own charcoal; brackets in calm tones, no pink.
+    colors: {
+      "editor.background": "#131315",
+      "editorGutter.background": "#131315",
+      "editorLineNumber.foreground": "#45454C",
+      "editorBracketHighlight.foreground1": "#C9C9D1",
+      "editorBracketHighlight.foreground2": "#7AB0FF",
+      "editorBracketHighlight.foreground3": "#9ADBC4",
+    },
   });
 }
 
@@ -81,7 +94,7 @@ export default function CodeEditor({ value, language, onChange, readOnly, height
     monaco.json.jsonDefaults.setDiagnosticsOptions({
       validate: true,
       allowComments: false,
-      schemas: schema ? [...others, { uri: `speklo://schema/${encodeURIComponent(path)}`, fileMatch: [uri], schema }] : others,
+      schemas: schema ? [...others, { uri: `requara://schema/${encodeURIComponent(path)}`, fileMatch: [uri], schema }] : others,
     });
   }, [path, schema, language]);
 
@@ -100,7 +113,7 @@ export default function CodeEditor({ value, language, onChange, readOnly, height
       <Editor
         beforeMount={defineThemes}
         onMount={onMount}
-        theme={isDark ? "speklo-dark" : "speklo-light"}
+        theme={isDark ? "requara-dark" : "requara-light"}
         language={language}
         path={path}
         value={value}
@@ -108,7 +121,7 @@ export default function CodeEditor({ value, language, onChange, readOnly, height
         options={{
           readOnly,
           minimap: { enabled: false },
-          fontFamily: prefs.codeFont ?? "JetBrains Mono, Menlo, monospace",
+          fontFamily: prefs.codeFont ?? "'Geist Mono Variable', ui-monospace, Menlo, monospace",
           fontSize: prefs.codeFontSize ?? 13,
           lineHeight: 22,
           scrollBeyondLastLine: false,

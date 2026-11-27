@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Settings {
-    /// Base URL of the Speklo server, e.g. `https://speklo.company.com`.
+    /// Base URL of the Requara server, e.g. `https://requara.company.com`.
     pub server_url: Option<String>,
 }
 
 fn path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("Speklo").join("settings.json"))
+    Some(dirs::config_dir()?.join("Requara").join("settings.json"))
 }
 
 impl Settings {
@@ -34,7 +34,7 @@ impl Settings {
     }
 }
 
-/// Turns what a person typed ("speklo.acme.com", "http://localhost:5173/")
+/// Turns what a person typed ("requara.acme.com", "http://localhost:5173/")
 /// into a base URL: adds https:// when no scheme is given, drops the trailing slash.
 pub fn normalize_server_url(input: &str) -> Option<String> {
     let s = input.trim();
@@ -44,7 +44,10 @@ pub fn normalize_server_url(input: &str) -> Option<String> {
     let s = if s.starts_with("http://") || s.starts_with("https://") {
         s.to_string()
     } else {
-        format!("https://{s}")
+        // A server on this machine is a local test one, which has no TLS.
+        let host = s.split(['/', ':']).next().unwrap_or_default();
+        let local = host == "localhost" || host == "127.0.0.1" || s.starts_with("[::1]");
+        format!("{}://{s}", if local { "http" } else { "https" })
     };
     let s = s.trim_end_matches('/').to_string();
     url::Url::parse(&s)
@@ -60,8 +63,20 @@ mod tests {
     #[test]
     fn normalizes() {
         assert_eq!(
-            n("speklo.acme.com").as_deref(),
-            Some("https://speklo.acme.com")
+            n("requara.acme.com").as_deref(),
+            Some("https://requara.acme.com")
+        );
+        assert_eq!(
+            n("localhost:8080").as_deref(),
+            Some("http://localhost:8080")
+        );
+        assert_eq!(
+            n("127.0.0.1:8080/").as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+        assert_eq!(
+            n("localhost.acme.com").as_deref(),
+            Some("https://localhost.acme.com")
         );
         assert_eq!(
             n(" http://localhost:5173/ ").as_deref(),

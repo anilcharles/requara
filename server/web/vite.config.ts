@@ -15,6 +15,7 @@ export default defineConfig({
       "^/api(/|$)": { target: backend },
       "^/auth(/|$)": { target: backend },
       "^/mock(/|$)": { target: backend },
+      "^/scim(/|$)": { target: backend },
     },
   },
 });

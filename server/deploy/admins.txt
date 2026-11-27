@@ -1,0 +1,5 @@
+# Requara instance admins: one email per line (or comma-separated).
+# They manage users, workspaces, the audit log, admin tokens and settings at /admin.
+# Mounted into the server as a Docker secret (see docker-compose.yml).
+# An admin must sign in with this email, verified by their sign-in provider.
+# Apply changes with: docker compose up -d

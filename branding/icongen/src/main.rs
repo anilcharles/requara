@@ -1,9 +1,9 @@
-//! Renders the Speklo icon SVG into every file the apps need.
+//! Renders the Requara icon SVG into every file the apps need.
 //!
 //!     cargo run --manifest-path branding/icongen/Cargo.toml
 //!
 //! Writes desktop/assets/icons/ (PNGs, icon.icns, icon.ico) and the web
-//! favicon PNGs. Run it again whenever branding/speklo-icon.svg changes.
+//! favicon PNGs. Run it again whenever branding/requara-icon.svg changes.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,8 +26,8 @@ fn load(path: &Path) -> Result<usvg::Tree> {
 
 fn main() -> Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize()?;
-    let icon = load(&root.join("branding/speklo-icon.svg"))?;
-    let favicon = load(&root.join("branding/speklo-favicon.svg"))?;
+    let icon = load(&root.join("branding/requara-icon.svg"))?;
+    let favicon = load(&root.join("branding/requara-favicon.svg"))?;
 
     // Desktop: PNGs for Linux and the packager, then .icns and .ico.
     let out = root.join("desktop/assets/icons");

@@ -7,7 +7,7 @@ import (
 
 func TestClaimStrings(t *testing.T) {
 	claims := map[string]any{
-		"groups":       []any{"/engineering/speklo-admin", "payments"},
+		"groups":       []any{"/engineering/requara-admin", "payments"},
 		"roles":        "api-designer", // some providers send a single string
 		"realm_access": map[string]any{"roles": []any{"offline_access", "api-designer"}},
 	}
@@ -28,11 +28,11 @@ func TestMatches(t *testing.T) {
 		values, wanted []string
 		want           bool
 	}{
-		{[]string{"/engineering/speklo-admin"}, []string{"speklo-admin"}, true},
-		{[]string{"Speklo-Admin"}, []string{"speklo-admin"}, true},
+		{[]string{"/engineering/requara-admin"}, []string{"requara-admin"}, true},
+		{[]string{"Requara-Admin"}, []string{"requara-admin"}, true},
 		{[]string{"7f3c2e9a-…-group-object-id"}, []string{"7f3c2e9a-…-group-object-id"}, true}, // Entra ID group IDs
-		{[]string{"payments"}, []string{"speklo-admin"}, false},
-		{nil, []string{"speklo-admin"}, false},
+		{[]string{"payments"}, []string{"requara-admin"}, false},
+		{nil, []string{"requara-admin"}, false},
 	}
 	for _, c := range cases {
 		if got := Matches(c.values, c.wanted); got != c.want {

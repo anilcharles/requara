@@ -1,6 +1,6 @@
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "../ui/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Input, Modal, theme, Typography, type InputRef } from "antd";
+import { Input, Modal, theme, Typography, type InputRef } from "../ui/kit";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get } from "../api";
@@ -11,8 +11,6 @@ type Item = { key: string; title: string; meta: string; method?: string; go: str
 const PAGES: Item[] = [
   { key: "p-apis", title: "APIs", meta: "Catalog", go: "/apis", group: "Go to" },
   { key: "p-req", title: "Requests", meta: "Workspace", go: "/requests", group: "Go to" },
-  { key: "p-design", title: "Design", meta: "Schema editor", go: "/design", group: "Go to" },
-  { key: "p-docs", title: "Docs", meta: "Reference", go: "/docs", group: "Go to" },
   { key: "p-hist", title: "History", meta: "Sent requests", go: "/history", group: "Go to" },
   { key: "p-mock", title: "Mock servers", meta: "Live mocks", go: "/mocks", group: "Go to" },
   { key: "p-env", title: "Environments", meta: "Variables", go: "/environments", group: "Go to" },
@@ -38,7 +36,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     const pages = PAGES.filter((p) => !ql || p.title.toLowerCase().includes(ql));
     const hits = (search.data ?? []).map<Item>((h) =>
       h.kind === "api"
-        ? { key: "a" + h.id, title: h.title, meta: h.meta, go: `/design/${h.id}`, group: "APIs" }
+        ? { key: "a" + h.id, title: h.title, meta: h.meta, go: `/apis?open=${h.id}`, group: "APIs" }
         : { key: "r" + h.id, title: h.title, meta: h.meta, method: h.method, go: `/requests/${h.id}`, group: "Requests" },
     );
     return [...pages, ...hits];

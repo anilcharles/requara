@@ -1,8 +1,8 @@
 {
   "identities": [
     {
-      "name": "speklo",
-      "credentials": [{ "accessKey": "speklo", "secretKey": "speklo-dev-s3" }],
+      "name": "requara",
+      "credentials": [{ "accessKey": "requara", "secretKey": "requara-dev-s3" }],
       "actions": ["Admin", "Read", "Write", "List", "Tagging"]
     }
   ]

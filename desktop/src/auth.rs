@@ -1,4 +1,4 @@
-//! Signing in to a Speklo server from the desktop app.
+//! Signing in to a Requara server from the desktop app.
 //!
 //! The app never sees a password. It follows RFC 8252 (OAuth for native apps):
 //!
@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 
 use crate::api::Client;
 
-const KEYCHAIN_SERVICE: &str = "Speklo";
+const KEYCHAIN_SERVICE: &str = "Requara";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// Runs the whole browser sign-in and returns a session token. Blocks until
@@ -39,6 +39,13 @@ pub fn sign_in(server: &str, provider: &str) -> Result<String> {
     let url = format!(
         "{server}/auth/login?provider={provider}&desktop_port={port}&desktop_challenge={challenge}"
     );
+    // The end-to-end test plays the browser: it reads the address from a file.
+    #[cfg(feature = "screenshot")]
+    if let Ok(file) = std::env::var("REQUARA_SHOT_BROWSER_FILE") {
+        std::fs::write(&file, &url)?;
+        let code = wait_for_code(&listener)?;
+        return Ok(Client::new(server, None)?.exchange(&code, &verifier)?.token);
+    }
     open::that_detached(&url).with_context(|| format!("couldn't open the browser at {url}"))?;
 
     let code = wait_for_code(&listener)?;
@@ -91,7 +98,7 @@ fn handle(mut stream: TcpStream) -> Result<Option<Result<String>>> {
         respond(
             &mut stream,
             "200 OK",
-            "You're signed in to Speklo. You can close this tab and go back to the app.",
+            "You're signed in to Requara. You can close this tab and go back to the app.",
         )?;
         Ok(Some(Ok(code)))
     } else {
@@ -107,7 +114,7 @@ fn handle(mut stream: TcpStream) -> Result<Option<Result<String>>> {
 
 fn respond(stream: &mut TcpStream, status: &str, message: &str) -> Result<()> {
     let body = format!(
-        "<!doctype html><meta charset=utf-8><title>Speklo</title>\
+        "<!doctype html><meta charset=utf-8><title>Requara</title>\
          <body style=\"font-family:system-ui;background:#14161F;color:#fff;display:grid;place-items:center;height:100vh;margin:0\">\
          <p style=\"font-size:18px\">{message}</p>"
     );

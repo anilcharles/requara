@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """End-to-end smoke test: signs in through Keycloak's real login form, then
-exercises the Speklo API (send, secrets, keys, design, publish, mocks)."""
+exercises the Requara API (send, secrets, keys, design, publish, mocks)."""
 import http.cookiejar, json, re, sys, urllib.parse, urllib.request, html
 
 BACKEND = "http://localhost:8080"
@@ -20,7 +20,7 @@ def raw(method, url, data=None, headers=None):
         return e.code, dict(e.headers), e.read()
 
 def api(method, path, body=None, headers=None, expect=None):
-    h = {"X-Requested-With": "speklo", **(headers or {})}
+    h = {"X-Requested-With": "requara", **(headers or {})}
     data = None
     if body is not None:
         data = json.dumps(body).encode(); h["Content-Type"] = "application/json"
@@ -32,13 +32,16 @@ def api(method, path, body=None, headers=None, expect=None):
 def ok(msg): print("  ok  " + msg)
 
 # --- sign in through Keycloak ---
-st, h, _ = raw("GET", BACKEND + "/auth/login?login_hint=alex@acme.dev&redirect=/apis")
+# The first OpenID Connect provider (dev's Keycloak).
+_, _, provs = raw("GET", BACKEND + "/auth/providers")
+provider = next(p["id"] for p in json.loads(provs)["providers"] if p["type"] == "oidc")
+st, h, _ = raw("GET", BACKEND + f"/auth/login?provider={provider}&login_hint=alex@acme.dev&redirect=/apis")
 assert st == 302 and "realms/acme" in h["Location"], (st, h)
 st, h, page = raw("GET", h["Location"])
 for c in jar:  # browsers treat localhost as secure; Python's cookie jar doesn't
     c.secure = False
 action = html.unescape(re.search(rb'action="([^"]+)"', page).group(1).decode())
-form = urllib.parse.urlencode({"username": "alex.chen", "password": "speklo-dev", "credentialId": ""}).encode()
+form = urllib.parse.urlencode({"username": "alex.chen", "password": "requara-dev", "credentialId": ""}).encode()
 st, h, page = raw("POST", action, form, {"Content-Type": "application/x-www-form-urlencoded"})
 assert st == 302, (st, page[:300])
 cb = urllib.parse.urlparse(h["Location"])            # http://localhost:5173/auth/callback?...
@@ -47,7 +50,7 @@ assert st == 302 and h["Location"].endswith("/apis"), (st, h)
 ok("signed in via Keycloak (alex.chen)")
 
 _, me = api("GET", "/api/me", expect=200)
-assert "speklo-admin" in me["roles"] and me["canPublish"], me
+assert "requara-admin" in me["roles"] and me["canPublish"], me
 ok(f"me: {me['name']} roles={me['roles']} member={me['memberRole']}")
 
 _, apis = api("GET", "/api/apis", expect=200)

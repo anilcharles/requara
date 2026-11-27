@@ -1,0 +1,112 @@
+# Requara server on Kubernetes: an example to adapt, not a turnkey install.
+# It runs the Requara server (web UI, API, sign-in, mock servers) and expects
+# Postgres, OpenBao and S3 storage that already exist; the server reads their
+# credentials from OpenBao (secret/requara/prod/{postgres,s3,smtp,session}).
+#
+#   kubectl create namespace requara
+#   kubectl -n requara apply -f requara.yaml
+#
+# Instance admins come from the requara-admins Secret below — never from the
+# browser. Change the Secret and restart the pods to add or remove admins:
+#
+#   kubectl -n requara create secret generic requara-admins \
+#     --from-literal=emails='ana@acme.com,ops@acme.com' --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n requara rollout restart deployment/requara
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: requara-admins
+type: Opaque
+stringData:
+  # One email per line or comma-separated. Each admin must sign in with this
+  # address, verified by their sign-in provider.
+  emails: |
+    ana@acme.com
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: requara-auth
+type: Opaque
+stringData:
+  # Sign-in provider secrets (they can live in OpenBao instead:
+  # secret/requara/prod/auth, key "<id>_client_secret").
+  REQUARA_AUTH_GOOGLE_CLIENT_SECRET: change-me
+  # AppRole credentials for OpenBao.
+  BAO_ROLE_ID: change-me
+  BAO_SECRET_ID: change-me
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: requara
+data:
+  REQUARA_ENV: prod
+  REQUARA_FRONTEND_URL: https://requara.acme.com
+  REQUARA_PUBLIC_URL: https://requara.acme.com
+  REQUARA_ORG_NAME: Acme
+  REQUARA_AUTH_PROVIDERS: google,corp
+  REQUARA_AUTH_GOOGLE_CLIENT_ID: change-me
+  REQUARA_AUTH_CORP_TYPE: saml
+  REQUARA_AUTH_CORP_NAME: Acme SSO
+  REQUARA_AUTH_CORP_METADATA_URL: https://acme.okta.com/app/xyz/sso/saml/metadata
+  REQUARA_ALLOWED_DOMAINS: acme.com
+  REQUARA_AUDIT_RETENTION_DAYS: "365"
+  BAO_ADDR: http://openbao.requara.svc:8200
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: requara
+  labels: { app: requara }
+spec:
+  replicas: 2   # sessions, sign-in state and jobs live in Postgres, so replicas share them
+  selector:
+    matchLabels: { app: requara }
+  template:
+    metadata:
+      labels: { app: requara }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: requara
+          image: ghcr.io/OWNER/REPO/server:latest   # pin a release
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: requara }
+            - secretRef: { name: requara-auth }
+          env:
+            # Admins from the mounted Secret. (Or put them straight in an env
+            # var: REQUARA_ADMIN_EMAILS with valueFrom.secretKeyRef.)
+            - name: REQUARA_ADMIN_EMAILS_FILE
+              value: /run/secrets/requara/admins
+          volumeMounts:
+            - { name: admins, mountPath: /run/secrets/requara, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: admins
+          secret:
+            secretName: requara-admins
+            items: [{ key: emails, path: admins }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: requara
+spec:
+  selector: { app: requara }
+  ports: [{ name: http, port: 80, targetPort: http }]

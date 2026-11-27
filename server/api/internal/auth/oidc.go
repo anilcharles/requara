@@ -11,7 +11,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	"github.com/anilcharles/speklo/server/api/internal/config"
+	"github.com/anilcharles/requara/server/api/internal/config"
 )
 
 // oidcProvider signs in with an OpenID Connect provider. Discovery happens on
@@ -137,6 +137,11 @@ func (o *oidcProvider) exchange(ctx context.Context, code string, st *loginState
 	}
 	if v, ok := all["email_verified"].(bool); ok && !v {
 		return nil, "", fmt.Errorf("verify your email address with %s first", o.cfg.Name)
+	} else if ok && v {
+		cl.EmailVerified = true
+	}
+	if o.cfg.TrustEmail {
+		cl.EmailVerified = true
 	}
 	if cl.Email == "" && strings.Contains(cl.Username, "@") {
 		cl.Email = cl.Username // Entra ID: preferred_username is the UPN

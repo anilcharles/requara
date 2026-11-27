@@ -9,38 +9,52 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anilcharles/speklo/server/api/internal/runner"
+	"github.com/anilcharles/requara/server/api/internal/runner"
+	"github.com/anilcharles/requara/server/api/internal/sandbox"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
 
 type requestDoc struct {
-	ID           string          `json:"id"`
-	APIID        *string         `json:"apiId"`
-	Folder       string          `json:"folder"`
-	Name         string          `json:"name"`
-	Method       string          `json:"method"`
-	URL          string          `json:"url"`
-	Params       []runner.KV     `json:"params"`
-	Headers      []runner.KV     `json:"headers"`
-	BodyMode     string          `json:"bodyMode"`
-	Body         string          `json:"body"`
-	Auth         runner.Auth     `json:"auth"`
-	PreScript    string          `json:"preScript"`
-	PostScript   string          `json:"postScript"`
-	Settings     runner.Settings `json:"settings"`
-	OperationKey string          `json:"operationKey"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
+	ID           string             `json:"id"`
+	APIID        *string            `json:"apiId"`
+	CollectionID *string            `json:"collectionId"`
+	Kind         string             `json:"kind"` // http | websocket
+	Folder       string             `json:"folder"`
+	Name         string             `json:"name"`
+	Method       string             `json:"method"`
+	URL          string             `json:"url"`
+	Params       []runner.KV        `json:"params"`
+	Headers      []runner.KV        `json:"headers"`
+	BodyMode     string             `json:"bodyMode"`
+	Body         string             `json:"body"`
+	Auth         runner.Auth        `json:"auth"`
+	PreScript    string             `json:"preScript"`
+	PostScript   string             `json:"postScript"`
+	Settings     runner.Settings    `json:"settings"`
+	OperationKey string             `json:"operationKey"`
+	FormData     []runner.FormField `json:"formData"`
+	BodyFile     *runner.File       `json:"bodyFile"`
+	Messages     json.RawMessage    `json:"messages"` // WebSocket: saved messages
+	UpdatedAt    time.Time          `json:"updatedAt"`
 }
 
-const requestCols = `id, api_id, folder, name, method, url, params, headers, body_mode, body, auth, pre_script, post_script, settings, operation_key, updated_at`
+const requestCols = `id, api_id, collection_id, kind, folder, name, method, url, params, headers, body_mode, body, auth, pre_script, post_script, settings, operation_key, form_data, body_file, messages, updated_at`
 
 func scanRequest(row pgx.Row) (*requestDoc, error) {
 	var d requestDoc
-	var params, headers, auth, settings []byte
-	err := row.Scan(&d.ID, &d.APIID, &d.Folder, &d.Name, &d.Method, &d.URL, &params, &headers, &d.BodyMode, &d.Body, &auth, &d.PreScript, &d.PostScript, &settings, &d.OperationKey, &d.UpdatedAt)
+	var params, headers, auth, settings, formData, bodyFile []byte
+	err := row.Scan(&d.ID, &d.APIID, &d.CollectionID, &d.Kind, &d.Folder, &d.Name, &d.Method, &d.URL, &params, &headers, &d.BodyMode, &d.Body, &auth,
+		&d.PreScript, &d.PostScript, &settings, &d.OperationKey, &formData, &bodyFile, &d.Messages, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
+	}
+	_ = json.Unmarshal(formData, &d.FormData)
+	if d.FormData == nil {
+		d.FormData = []runner.FormField{}
+	}
+	if string(bodyFile) != "{}" {
+		_ = json.Unmarshal(bodyFile, &d.BodyFile)
 	}
 	_ = json.Unmarshal(params, &d.Params)
 	_ = json.Unmarshal(headers, &d.Headers)
@@ -86,6 +100,7 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	}
 	type coll struct {
 		ID      string    `json:"id"`
+		Kind    string    `json:"kind"` // api | collection | scratch
 		Name    string    `json:"name"`
 		Version string    `json:"version"`
 		Status  string    `json:"status"`
@@ -106,7 +121,7 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 			if v == "" {
 				v = draft
 			}
-			c = &coll{ID: aid, Name: aname, Version: majorVersion(v), Status: status, Folders: []*folder{}}
+			c = &coll{ID: aid, Kind: "api", Name: aname, Version: majorVersion(v), Status: status, Folders: []*folder{}}
 			byID[aid] = c
 			out = append(out, c)
 		}
@@ -130,16 +145,61 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Requests made with "+" in the editor belong to no API; list them under "Scratch".
+	// Collections people made or imported.
+	crows, err := s.db.Query(r.Context(), `
+		SELECT c.id::text, c.name, r.id::text, r.name, r.method, r.folder, r.kind
+		FROM collections c LEFT JOIN requests r ON r.collection_id = c.id
+		WHERE c.workspace_id = $1 AND c.api_id IS NULL
+		ORDER BY c.sort, c.created_at, r.sort, r.created_at`, p.WorkspaceID)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	for crows.Next() {
+		var cid, cname string
+		var rid, rname, rmethod, rfolder, rkind *string
+		if err := crows.Scan(&cid, &cname, &rid, &rname, &rmethod, &rfolder, &rkind); err != nil {
+			crows.Close()
+			serverError(w, err)
+			return
+		}
+		c := byID[cid]
+		if c == nil {
+			c = &coll{ID: cid, Kind: "collection", Name: cname, Status: "draft", Folders: []*folder{}}
+			byID[cid] = c
+			out = append(out, c)
+		}
+		if rid == nil {
+			continue
+		}
+		var f *folder
+		for _, x := range c.Folders {
+			if x.Name == *rfolder {
+				f = x
+			}
+		}
+		if f == nil {
+			f = &folder{Name: *rfolder}
+			c.Folders = append(c.Folders, f)
+		}
+		m := *rmethod
+		if *rkind == "websocket" {
+			m = "WS"
+		}
+		f.Requests = append(f.Requests, req{ID: *rid, Name: *rname, Method: m})
+	}
+	crows.Close()
+
+	// Requests made with "+" in the editor belong to no API or collection; list them under "Scratch".
 	loose, err := s.db.Query(r.Context(), `
-		SELECT id, name, method, folder FROM requests
-		WHERE workspace_id = $1 AND api_id IS NULL ORDER BY folder, sort, created_at`, p.WorkspaceID)
+		SELECT id, name, CASE WHEN kind = 'websocket' THEN 'WS' ELSE method END, folder FROM requests
+		WHERE workspace_id = $1 AND api_id IS NULL AND collection_id IS NULL ORDER BY folder, sort, created_at`, p.WorkspaceID)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
 	defer loose.Close()
-	scratch := &coll{ID: "scratch", Name: "Scratch", Status: "draft", Folders: []*folder{}}
+	scratch := &coll{ID: "scratch", Kind: "scratch", Name: "Scratch", Status: "draft", Folders: []*folder{}}
 	for loose.Next() {
 		var x req
 		var fname string
@@ -200,6 +260,36 @@ func marshalRequest(in *requestDoc) (params, headers, auth, settings []byte) {
 	return
 }
 
+// marshalExtras encodes multipart fields, the binary body and WebSocket messages.
+func marshalExtras(in *requestDoc) (formData, bodyFile, messages []byte) {
+	if in.FormData == nil {
+		in.FormData = []runner.FormField{}
+	}
+	formData, _ = json.Marshal(in.FormData)
+	bodyFile = []byte("{}")
+	if in.BodyFile != nil {
+		bodyFile, _ = json.Marshal(in.BodyFile)
+	}
+	messages = in.Messages
+	if len(messages) == 0 || string(messages) == "null" {
+		messages = []byte("[]")
+	}
+	return
+}
+
+const maxRequestFile = 10 << 20 // base64 data in form fields and binary bodies
+
+func requestTooBig(in *requestDoc) bool {
+	n := 0
+	for _, f := range in.FormData {
+		n += len(f.Value)
+	}
+	if in.BodyFile != nil {
+		n += len(in.BodyFile.Data)
+	}
+	return n > maxRequestFile*4/3
+}
+
 func (s *Server) createRequest(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	if !requireEdit(w, p) {
@@ -221,12 +311,26 @@ func (s *Server) createRequest(w http.ResponseWriter, r *http.Request) {
 	if in.Auth.Type == "" {
 		in.Auth.Type = "inherit"
 	}
+	if in.Kind != "websocket" {
+		in.Kind = "http"
+	}
+	if requestTooBig(&in) {
+		httpError(w, http.StatusRequestEntityTooLarge, "Files in a request can be up to 10 MB in total")
+		return
+	}
+	if in.CollectionID != nil && !s.collectionInWorkspace(r.Context(), p.WorkspaceID, *in.CollectionID) {
+		httpError(w, http.StatusBadRequest, "Collection not found")
+		return
+	}
 	params, headers, auth, settings := marshalRequest(&in)
+	formData, bodyFile, messages := marshalExtras(&in)
 	d, err := scanRequest(s.db.QueryRow(r.Context(), `
-		INSERT INTO requests (workspace_id, api_id, folder, name, method, url, params, headers, body_mode, body, auth, pre_script, post_script, settings, sort)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, 1000)
+		INSERT INTO requests (workspace_id, api_id, collection_id, kind, folder, name, method, url, params, headers, body_mode, body, auth, pre_script, post_script, settings, form_data, body_file, messages, sort)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+		        COALESCE((SELECT max(sort) + 1 FROM requests WHERE workspace_id = $1 AND collection_id IS NOT DISTINCT FROM $3 AND api_id IS NOT DISTINCT FROM $2), 0))
 		RETURNING `+requestCols,
-		p.WorkspaceID, in.APIID, in.Folder, in.Name, strings.ToUpper(in.Method), in.URL, params, headers, in.BodyMode, in.Body, auth, in.PreScript, in.PostScript, settings))
+		p.WorkspaceID, in.APIID, in.CollectionID, in.Kind, in.Folder, in.Name, strings.ToUpper(in.Method), in.URL, params, headers, in.BodyMode, in.Body, auth,
+		in.PreScript, in.PostScript, settings, formData, bodyFile, messages))
 	if err != nil {
 		serverError(w, err)
 		return
@@ -243,12 +347,19 @@ func (s *Server) updateRequest(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
+	if requestTooBig(&in) {
+		httpError(w, http.StatusRequestEntityTooLarge, "Files in a request can be up to 10 MB in total")
+		return
+	}
 	params, headers, auth, settings := marshalRequest(&in)
+	formData, bodyFile, messages := marshalExtras(&in)
 	d, err := scanRequest(s.db.QueryRow(r.Context(), `
 		UPDATE requests SET name=$3, method=$4, url=$5, params=$6, headers=$7, body_mode=$8, body=$9, auth=$10,
-		       pre_script=$11, post_script=$12, settings=$13, updated_at=now()
+		       pre_script=$11, post_script=$12, settings=$13, form_data=$14, body_file=$15, messages=$16,
+		       folder=COALESCE(NULLIF($17,''), folder), updated_at=now()
 		WHERE workspace_id=$1 AND id::text=$2 RETURNING `+requestCols,
-		p.WorkspaceID, chi.URLParam(r, "id"), in.Name, strings.ToUpper(in.Method), in.URL, params, headers, in.BodyMode, in.Body, auth, in.PreScript, in.PostScript, settings))
+		p.WorkspaceID, chi.URLParam(r, "id"), in.Name, strings.ToUpper(in.Method), in.URL, params, headers, in.BodyMode, in.Body, auth,
+		in.PreScript, in.PostScript, settings, formData, bodyFile, messages, in.Folder))
 	if notFound(err) {
 		httpError(w, http.StatusNotFound, "Request not found")
 		return
@@ -279,7 +390,38 @@ func transitKey(ws string) string { return "ws-" + ws }
 // resolveEnv returns the chosen environment, every variable value (globals,
 // then the environment's own) and the list of secret values to redact.
 // Secrets that can't be decrypted are left out and named in unreadable.
-func (s *Server) resolveEnv(ctx context.Context, p *Principal, envID string) (id, name string, vars map[string]string, secrets, unreadable []string, err error) {
+func (s *Server) resolveEnv(ctx context.Context, p *Principal, envID string, collectionVars []runner.KV) (id, name string, vars map[string]string, secrets, unreadable []string, err error) {
+	r, err := s.resolveVars(ctx, p, envID, collectionVars)
+	if err != nil {
+		return "", "", nil, nil, nil, err
+	}
+	return r.envID, r.envName, r.vars, r.secrets, r.unreadable, nil
+}
+
+// resolved is what a send's variables are, each scope apart for scripts.
+type resolved struct {
+	envID, envName, globalID string
+	vars                     map[string]string // what they resolve to
+	scopes                   *sandbox.Scopes
+	secrets, unreadable      []string
+}
+
+func (s *Server) resolveVars(ctx context.Context, p *Principal, envID string, collectionVars []runner.KV) (*resolved, error) {
+	id, name, globalID, vars, scopes, secrets, unreadable, err := s.resolveEnvScoped(ctx, p, envID, collectionVars)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved{envID: id, envName: name, globalID: globalID, vars: vars, scopes: scopes, secrets: secrets, unreadable: unreadable}, nil
+}
+
+func (s *Server) resolveEnvScoped(ctx context.Context, p *Principal, envID string, collectionVars []runner.KV) (id, name, globalID string, vars map[string]string, scopes *sandbox.Scopes, secrets, unreadable []string, err error) {
+	scopes = &sandbox.Scopes{Globals: map[string]string{}, Collection: map[string]string{}, Environment: map[string]string{}, Data: map[string]string{}}
+	for _, v := range collectionVars {
+		if v.Enabled && v.Key != "" {
+			scopes.Collection[v.Key] = v.Value
+		}
+	}
+	_ = s.db.QueryRow(ctx, `SELECT id FROM environments WHERE workspace_id=$1 AND is_global ORDER BY sort LIMIT 1`, p.WorkspaceID).Scan(&globalID)
 	if envID == "" {
 		envID, _ = p.Prefs["activeEnvironmentId"].(string)
 	}
@@ -290,17 +432,20 @@ func (s *Server) resolveEnv(ctx context.Context, p *Principal, envID string) (id
 		return
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT v.key, v.value, v.ciphertext, v.kind
+		SELECT v.key, v.value, v.ciphertext, v.kind, e.is_global
 		FROM env_vars v JOIN environments e ON e.id = v.env_id
 		WHERE e.workspace_id=$1 AND v.enabled AND (e.is_global OR e.id::text = $2)
 		ORDER BY e.is_global DESC, v.sort`, p.WorkspaceID, id)
 	if err != nil {
 		return
 	}
-	type row struct{ key, value, ct, kind string }
+	type row struct {
+		key, value, ct, kind string
+		global               bool
+	}
 	all, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 		var x row
-		return x, r.Scan(&x.key, &x.value, &x.ct, &x.kind)
+		return x, r.Scan(&x.key, &x.value, &x.ct, &x.kind, &x.global)
 	})
 	if err != nil {
 		return
@@ -326,10 +471,32 @@ func (s *Server) resolveEnv(ctx context.Context, p *Principal, envID string) (id
 		all[i].value = plain[j]
 		secrets = append(secrets, plain[j])
 	}
+	// Postman's order: globals, then the collection's variables, then the environment's.
 	vars = map[string]string{}
+	collectionDone := false
 	for i, x := range all {
+		if !x.global && !collectionDone {
+			for _, v := range collectionVars {
+				if v.Enabled && v.Key != "" {
+					vars[v.Key] = v.Value
+				}
+			}
+			collectionDone = true
+		}
 		if !skip[i] {
 			vars[x.key] = x.value
+			if x.global {
+				scopes.Globals[x.key] = x.value
+			} else {
+				scopes.Environment[x.key] = x.value
+			}
+		}
+	}
+	if !collectionDone {
+		for _, v := range collectionVars {
+			if v.Enabled && v.Key != "" {
+				vars[v.Key] = v.Value
+			}
 		}
 	}
 	return
@@ -348,22 +515,42 @@ func (s *Server) sendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Draft         *requestDoc `json:"draft"` // unsaved edits from the editor
-		EnvironmentID string      `json:"environmentId"`
+		Draft         *requestDoc       `json:"draft"` // unsaved edits from the editor
+		EnvironmentID string            `json:"environmentId"`
+		Data          map[string]string `json:"data"` // the Collection Runner's iteration data
 	}
 	if r.ContentLength != 0 && !readJSON(w, r, &in) {
 		return
 	}
 	if in.Draft != nil {
-		in.Draft.ID, in.Draft.APIID = d.ID, d.APIID
+		in.Draft.ID, in.Draft.APIID, in.Draft.CollectionID = d.ID, d.APIID, d.CollectionID
 		d = in.Draft
 	}
-	envID, envName, vars, secrets, unreadable, err := s.resolveEnv(ctx, p, in.EnvironmentID)
+	res, envName, historyID, err := s.sendDoc(ctx, p, d, in.EnvironmentID, in.Data)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"result": res, "historyId": historyID, "environment": envName})
+}
+
+// sendDoc sends a request the way its collection and environment say, keeps
+// what scripts and cookies changed, and records it in history.
+func (s *Server) sendDoc(ctx context.Context, p *Principal, d *requestDoc, envID string, data map[string]string) (*runner.Result, string, string, error) {
+	inh := s.inheritFor(ctx, p.WorkspaceID, d)
+	rv, err := s.resolveVars(ctx, p, envID, inh.vars)
+	if err != nil {
+		return nil, "", "", err
+	}
+	envID, envName, vars, secrets, unreadable := rv.envID, rv.envName, rv.vars, rv.secrets, rv.unreadable
+	for k, v := range data {
+		vars[k] = v
+		rv.scopes.Data[k] = v
+	}
 	auth := d.Auth
+	if auth.Type == "inherit" || auth.Type == "" {
+		auth = inh.auth
+	}
 	if auth.Type == "inherit" || auth.Type == "" {
 		auth = runner.Auth{Type: "none"}
 		if _, ok := vars["secret_key"]; ok {
@@ -377,12 +564,47 @@ func (s *Server) sendRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	res := s.runner.Send(ctx, runner.Spec{
 		Method: d.Method, URL: d.URL, Params: d.Params, Headers: d.Headers, BodyMode: d.BodyMode, Body: d.Body,
-		Auth: auth, PreScript: d.PreScript, PostScript: d.PostScript, Settings: d.Settings,
+		FormData: d.FormData, BodyFile: d.BodyFile, Cookies: s.loadCookies(ctx, p),
+		Auth: auth, PreScript: joinScripts(inh.pre, d.PreScript), PostScript: joinScripts(inh.post, d.PostScript), Settings: d.Settings,
+		Scopes: rv.scopes, Info: sandbox.Info{RequestName: d.Name, RequestID: d.ID},
 	}, vars, secrets)
-
-	if len(res.EnvChanges) > 0 && envID != "" && p.CanEdit() {
-		if err := s.applyScriptVars(ctx, p, envID, res.EnvChanges); err != nil {
-			res.ScriptError = strings.TrimSpace(res.ScriptError + " (couldn't save variables: " + err.Error() + ")")
+	if len(res.Cookies) > 0 && p.UserID != "" {
+		s.saveCookies(ctx, p, res.Cookies)
+	}
+	if p.CanEdit() {
+		// Each scope's changes go where that scope lives. Without a
+		// collection or a globals environment, they go to the environment.
+		envChanges := res.EnvChanges
+		collectionID := ""
+		if d.CollectionID != nil {
+			collectionID = *d.CollectionID
+		} else if d.APIID != nil {
+			collectionID = *d.APIID
+		}
+		var errs []string
+		if len(res.CollectionChanges) > 0 {
+			if collectionID == "" {
+				envChanges = merged(envChanges, res.CollectionChanges)
+			} else if err := s.applyCollectionVars(ctx, p, collectionID, res.CollectionChanges); err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+		if len(res.GlobalChanges) > 0 {
+			globalID, err := s.globalsEnv(ctx, p.WorkspaceID, rv.globalID)
+			if err == nil {
+				err = s.applyScriptVars(ctx, p, globalID, res.GlobalChanges)
+			}
+			if err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+		if len(envChanges) > 0 && envID != "" {
+			if err := s.applyScriptVars(ctx, p, envID, envChanges); err != nil {
+				errs = append(errs, err.Error())
+			}
+		}
+		if len(errs) > 0 {
+			res.ScriptError = strings.TrimSpace(res.ScriptError + " (couldn't save variables: " + strings.Join(errs, "; ") + ")")
 		}
 	}
 	if len(unreadable) > 0 {
@@ -391,10 +613,75 @@ func (s *Server) sendRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	historyID, err := s.saveHistory(ctx, p, d, envName, res)
 	if err != nil {
-		serverError(w, err)
-		return
+		return nil, "", "", err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"result": res, "historyId": historyID, "environment": envName})
+	return res, envName, historyID, nil
+}
+
+// globalsEnv is the workspace's Globals environment, made the first time a
+// script sets a global.
+func (s *Server) globalsEnv(ctx context.Context, ws, known string) (string, error) {
+	if known != "" {
+		return known, nil
+	}
+	var id string
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO environments (workspace_id, name, color, is_global, sort)
+		SELECT $1, 'Globals', '#BFBFBF', true, 1000
+		WHERE NOT EXISTS (SELECT 1 FROM environments WHERE workspace_id=$1 AND is_global)
+		RETURNING id`, ws).Scan(&id)
+	if notFound(err) {
+		err = s.db.QueryRow(ctx, `SELECT id FROM environments WHERE workspace_id=$1 AND is_global ORDER BY sort LIMIT 1`, ws).Scan(&id)
+	}
+	return id, err
+}
+
+func merged(a, b map[string]string) map[string]string {
+	out := make(map[string]string, len(a)+len(b))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+// applyCollectionVars stores pm.collectionVariables changes in the
+// collection's (or API's) variables.
+func (s *Server) applyCollectionVars(ctx context.Context, p *Principal, id string, changes map[string]string) error {
+	c, err := s.loadSettings(ctx, p.WorkspaceID, id)
+	if err != nil {
+		return err
+	}
+	keys := make([]string, 0, len(changes))
+	for k := range changes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		found := false
+		for i := range c.Variables {
+			if c.Variables[i].Key == k {
+				c.Variables[i].Value, found = changes[k], true
+			}
+		}
+		if !found {
+			c.Variables = append(c.Variables, runner.KV{Key: k, Value: changes[k], Enabled: true})
+		}
+	}
+	vars, _ := json.Marshal(c.Variables)
+	auth, _ := json.Marshal(c.Auth)
+	if c.Kind == "api" {
+		_, err = s.db.Exec(ctx, `
+			INSERT INTO collections (workspace_id, api_id, name, description, variables, auth, pre_script, post_script)
+			VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (api_id) DO UPDATE SET variables=$5, updated_at=now()`,
+			p.WorkspaceID, c.ID, c.Name, c.Description, vars, auth, c.PreScript, c.PostScript)
+	} else {
+		_, err = s.db.Exec(ctx, `UPDATE collections SET variables=$3, updated_at=now() WHERE workspace_id=$1 AND id::text=$2`, p.WorkspaceID, c.ID, vars)
+	}
+	return err
 }
 
 // applyScriptVars stores variables set by scripts (re-encrypting secrets).
@@ -430,6 +717,9 @@ func (s *Server) applyScriptVars(ctx context.Context, p *Principal, envID string
 const inlineBodyLimit = 64 << 10
 
 func (s *Server) saveHistory(ctx context.Context, p *Principal, d *requestDoc, envName string, res *runner.Result) (string, error) {
+	if !s.settings(ctx).HistoryEnabled {
+		return "", nil // an admin turned request history off
+	}
 	body := res.Body
 	if save, ok := p.Prefs["saveResponses"].(bool); ok && !save {
 		body = ""

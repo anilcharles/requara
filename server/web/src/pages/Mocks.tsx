@@ -1,9 +1,9 @@
-import { SettingOutlined } from "@ant-design/icons";
+import { SettingOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
+import { App, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, theme, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
-import { get, mocksPath, patch, post, type ApiSummary, type Mock, type MockCall } from "../api";
+import { get, mocksPath, subscribeMockCalls, patch, post, type ApiSummary, type Mock, type MockCall } from "../api";
 import { Dot, Method, mono, PageHeader, StatusTag } from "../components/bits";
 
 export default function Mocks() {
@@ -15,19 +15,15 @@ export default function Mocks() {
   const [live, setLive] = useState(false);
   const [edit, setEdit] = useState<Mock | "new" | null>(null);
 
-  // Live log over Server-Sent Events.
-  useEffect(() => {
-    const es = new EventSource("/api/mocks/stream");
-    es.onopen = () => setLive(true);
-    es.onerror = () => setLive(false);
-    es.onmessage = (ev) => {
-      const e = JSON.parse(ev.data) as { type: string; data: MockCall };
-      if (e.type !== "mock_call") return;
-      qc.setQueryData<MockCall[]>(["mock-calls"], (old) => [e.data, ...(old ?? [])].slice(0, 50));
-      qc.setQueryData<Mock[]>(["mocks"], (old) => old?.map((m) => (m.name === e.data.mockName ? { ...m, callsToday: m.callsToday + 1 } : m)));
-    };
-    return () => es.close();
-  }, [qc]);
+  // Live log of calls to the mock servers.
+  useEffect(
+    () =>
+      subscribeMockCalls((c) => {
+        qc.setQueryData<MockCall[]>(["mock-calls"], (old) => [c, ...(old ?? [])].slice(0, 50));
+        qc.setQueryData<Mock[]>(["mocks"], (old) => old?.map((m) => (m.name === c.mockName ? { ...m, callsToday: m.callsToday + 1 } : m)));
+      }, setLive),
+    [qc],
+  );
 
   const toggle = useMutation({
     mutationFn: (m: Mock) => patch(`/api/mocks/${m.id}`, { enabled: !m.enabled }),

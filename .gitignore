@@ -6,9 +6,13 @@ node_modules*/
 dist/
 target/
 *.tsbuildinfo
-server/api/speklo
+server/api/requara
 
 # Self-host settings with real secrets
 server/deploy/.env
 
 .DS_Store
+
+# Personal-workspace engine, built from server/api/cmd/requara-wasm (npm run core)
+server/web/public/core/requara-core.wasm*
+server/web/public/core/wasm_exec.js

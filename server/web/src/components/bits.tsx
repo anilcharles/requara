@@ -1,8 +1,8 @@
-import { Tag, theme, Typography } from "antd";
+import { theme, Typography } from "../ui/kit";
 import type { CSSProperties, ReactNode } from "react";
 import { methodColor, shortMethod, statusTone } from "../lib";
 
-export const mono: CSSProperties = { fontFamily: "JetBrains Mono, Menlo, ui-monospace, monospace" };
+export const mono: CSSProperties = { fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" };
 
 export function Method({ method, size = 11, width = 34 }: { method: string; size?: number; width?: number | "auto" }) {
   return (
@@ -13,12 +13,14 @@ export function Method({ method, size = 11, width = 34 }: { method: string; size
 }
 
 export function StatusTag({ status, text }: { status: number; text?: string }) {
+  // A dot and the status in its colour: quieter than a boxed badge.
   const tone = statusTone(status);
-  const color = tone === "success" ? "success" : tone === "warning" ? "warning" : tone === "error" ? "error" : "default";
+  const color = tone === "success" ? "#4ADE80" : tone === "warning" ? "#FBBF24" : tone === "error" ? "#F87171" : "#A8A39A";
   return (
-    <Tag color={color} style={{ marginInlineEnd: 0, fontWeight: 500 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+      <Dot color={color} size={7} />
       {status === 0 ? "Error" : `${status}${text ? " " + text : ""}`}
-    </Tag>
+    </span>
   );
 }
 

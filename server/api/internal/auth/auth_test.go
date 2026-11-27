@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anilcharles/speklo/server/api/internal/config"
+	"github.com/anilcharles/requara/server/api/internal/config"
 )
 
-// fakeGitHub answers the OAuth and REST endpoints Speklo calls.
+// fakeGitHub answers the OAuth and REST endpoints Requara calls.
 func fakeGitHub(t *testing.T, orgs []string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -81,7 +81,7 @@ func signIn(t *testing.T, m *Manager, query string) (*Result, error) {
 func TestGitHubSignIn(t *testing.T) {
 	gh := fakeGitHub(t, []string{"acme"})
 	defer gh.Close()
-	m, err := New(context.Background(), []config.AuthProvider{githubCfg(gh.URL, "acme")}, "http://speklo.test/auth/callback", []byte(strings.Repeat("k", 32)))
+	m, err := New(context.Background(), []config.AuthProvider{githubCfg(gh.URL, "acme")}, "http://requara.test", []byte(strings.Repeat("k", 32)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestGitHubSignIn(t *testing.T) {
 func TestGitHubOrgRestriction(t *testing.T) {
 	gh := fakeGitHub(t, []string{"someone-else"})
 	defer gh.Close()
-	m, _ := New(context.Background(), []config.AuthProvider{githubCfg(gh.URL, "acme")}, "http://speklo.test/auth/callback", []byte(strings.Repeat("k", 32)))
+	m, _ := New(context.Background(), []config.AuthProvider{githubCfg(gh.URL, "acme")}, "http://requara.test", []byte(strings.Repeat("k", 32)), nil)
 	if _, err := signIn(t, m, "provider=github"); err == nil || !strings.Contains(err.Error(), "acme") {
 		t.Fatalf("expected the org restriction to refuse, got %v", err)
 	}
@@ -115,7 +115,7 @@ func TestChoosingAProvider(t *testing.T) {
 	gh := fakeGitHub(t, nil)
 	defer gh.Close()
 	two := []config.AuthProvider{githubCfg(gh.URL), {ID: "okta", Type: "oidc", Name: "Okta", Issuer: "https://okta.invalid", ClientID: "x"}}
-	m, _ := New(context.Background(), two, "http://speklo.test/auth/callback", []byte(strings.Repeat("k", 32)))
+	m, _ := New(context.Background(), two, "http://requara.test", []byte(strings.Repeat("k", 32)), nil)
 	if got := m.Providers(); len(got) != 2 || got[0].ID != "github" || got[1].Name != "Okta" {
 		t.Errorf("providers: %+v", got)
 	}

@@ -7,19 +7,14 @@ body,
 body {
   -webkit-font-smoothing: antialiased;
 }
-.speklo-row:hover {
-  background: rgba(127, 127, 127, 0.08);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
-/* Docs code panels sit on a fixed dark background. */
-.speklo-dark-tabs .ant-tabs-tab {
-  color: rgba(255, 255, 255, 0.45);
+.requara-row:hover {
+  background: var(--rq-hover);
 }
-.speklo-dark-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: #4096ff !important;
-}
-.speklo-dark-tabs .ant-tabs-ink-bar {
-  background: #4096ff;
-}
-.speklo-dark-tabs.ant-tabs-top > .ant-tabs-nav::before {
-  border-bottom: none;
-}
+/* Row actions show on hover. */
+.requara-row .requara-more { visibility: hidden; }
+.requara-row:hover .requara-more, .requara-more[data-state="open"] { visibility: visible; }

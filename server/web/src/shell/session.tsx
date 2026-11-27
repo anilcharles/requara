@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App as AntApp, ConfigProvider, theme } from "antd";
+import { App as AntApp } from "../ui/kit";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { get, patch, type Environment, type Me, type Prefs } from "../api";
+import { get, patch, personalActive, type Environment, type Me, type Prefs } from "../api";
+import { warmCore } from "../personal/core";
 
 type PrefsCtx = { prefs: Prefs; isDark: boolean; setPrefs: (p: Partial<Prefs>) => void };
 const Ctx = createContext<PrefsCtx>({ prefs: {}, isDark: false, setPrefs: () => {} });
@@ -32,13 +33,19 @@ function useSystemDark() {
 }
 
 // Applies the signed-in user's theme and density to Ant Design.
+
 export function PrefsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const onSignIn = location.pathname.startsWith("/signin");
   const me = useMe(!onSignIn);
+  useEffect(() => {
+    // The personal workspace's engine downloads once; start it early.
+    if (personalActive()) (window.requestIdleCallback ?? setTimeout)(() => warmCore());
+  }, [me.data?.workspaceId]);
+
   const systemDark = useSystemDark();
   const prefs = me.data?.prefs ?? {};
-  const mode = prefs.theme ?? "system";
+  const mode = prefs.theme ?? "dark";
   const isDark = mode === "dark" || (mode === "system" && systemDark);
 
   const save = useMutation({
@@ -52,25 +59,16 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     onSuccess: (saved) => qc.setQueryData<Me>(["me"], (m) => (m ? { ...m, prefs: saved } : m)),
   });
 
-  const algorithms = [isDark ? theme.darkAlgorithm : theme.defaultAlgorithm];
-  if (prefs.density === "compact") algorithms.push(theme.compactAlgorithm);
-
   useEffect(() => {
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
-    document.body.style.background = isDark ? "#000" : "#F5F5F5";
-  }, [isDark]);
+    document.documentElement.dataset.theme = isDark ? "dark" : "light"; // src/ui colours
+    document.body.style.background = ""; // ui.css paints it from --rq-frame
+    document.documentElement.dataset.density = prefs.density === "compact" ? "compact" : "comfortable";
+  }, [isDark, prefs.density]);
 
   return (
     <Ctx.Provider value={{ prefs, isDark, setPrefs: (p) => save.mutate(p) }}>
-      <ConfigProvider
-        theme={{
-          algorithm: algorithms,
-          token: { colorPrimary: "#1677FF", borderRadius: 6, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" },
-          components: { Layout: { headerBg: isDark ? "#141414" : "#FFFFFF", siderBg: isDark ? "#141414" : "#FFFFFF", bodyBg: isDark ? "#000000" : "#F5F5F5", headerHeight: 56, headerPadding: "0 16px" } },
-        }}
-      >
-        <AntApp>{children}</AntApp>
-      </ConfigProvider>
+      <AntApp>{children}</AntApp>
     </Ctx.Provider>
   );
 }

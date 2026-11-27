@@ -1,12 +1,12 @@
 [package]
-name = "speklo-desktop"
+name = "requara-desktop"
 version = "0.1.0"
 edition = "2024"
-description = "Speklo desktop: the enterprise client for Speklo servers, built with GPUI"
+description = "Requara desktop: the enterprise client for Requara servers, built with GPUI"
 publish = false
 
 [[bin]]
-name = "speklo"
+name = "requara"
 path = "src/main.rs"
 
 [dependencies]
@@ -22,6 +22,13 @@ rand = "0.9"
 sha2 = "0.10"
 base64 = "0.22"
 url = "2"
+jiff = "1"
+image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
+
+[features]
+# Development only: `REQUARA_SHOT=out.png cargo run --features screenshot` renders the
+# window to a PNG and quits, so the UI can be checked without a screen capture.
+screenshot = ["gpui-kit/test-support", "dep:image"]
 
 [profile.release]
 lto = "thin"
@@ -30,13 +37,13 @@ strip = true
 # Installers (cargo install cargo-packager; cargo packager --release):
 # .dmg/.app on macOS, NSIS .exe on Windows, .deb and AppImage on Linux.
 [package.metadata.packager]
-product-name = "Speklo"
-identifier = "dev.speklo.desktop"
+product-name = "Requara"
+identifier = "dev.requara.desktop"
 category = "DeveloperTool"
-description = "The Speklo desktop app for your company's Speklo server"
+description = "The Requara desktop app for your company's Requara server"
 before-packaging-command = "cargo build --release"
 out-dir = "target/packages"
-binaries = [{ path = "speklo", main = true }]
+binaries = [{ path = "requara", main = true }]
 icons = [
   "assets/icons/32x32.png",
   "assets/icons/128x128.png",

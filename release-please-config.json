@@ -6,13 +6,13 @@
   "packages": {
     "server": {
       "component": "server",
-      "package-name": "speklo-server",
+      "package-name": "requara-server",
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md"
     },
     "desktop": {
       "component": "desktop",
-      "package-name": "speklo-desktop",
+      "package-name": "requara-desktop",
       "release-type": "rust",
       "changelog-path": "CHANGELOG.md"
     }

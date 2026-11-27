@@ -1,0 +1,159 @@
+<!doctype html>
+<!-- Requara's target design for the request page (dark). The reference for
+     src/ui: colours, sizes and controls come from here. Open it in a browser. -->
+<html><head><meta charset="utf-8"><title>Requara · request page design</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=block" rel="stylesheet">
+<style>
+:root{
+  --frame:#0B0B0C; --canvas:#131315; --raise:#1A1A1D; --hover:#1E1E21; --line:#232326; --line2:#2C2C30;
+  --text:#EDEDEF; --dim:#A1A1A9; --mute:#6B6B74; --blue:#3D8BFF;
+  --get:#6FCF97; --post:#F2B55B; --put:#7EB6FF; --del:#F07A7A; --ok:#4ADE80;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--frame);color:var(--text);font:13px/1.45 Geist,system-ui;height:100vh;overflow:hidden;display:grid;grid-template-rows:44px 1fr 26px;-webkit-font-smoothing:antialiased}
+svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+header{display:grid;grid-template-columns:248px 1fr auto;align-items:center;padding:0 12px 0 14px;gap:12px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px;letter-spacing:-.1px}
+.mark{width:20px;height:20px;border-radius:5px;background:#16171F;display:grid;place-items:center;position:relative}
+.mark i{width:10px;height:10px;border-radius:50%;border:2px solid #fff}
+.mark b{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--blue);top:3px;right:3px;box-shadow:0 0 0 2px #16171F}
+.ws{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--dim);padding:4px 8px;border-radius:6px}
+.search{width:360px;height:28px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border-radius:7px;background:var(--raise);color:var(--mute);border:1px solid var(--line)}
+.kbd{margin-left:auto;font:500 10.5px Geist;color:var(--mute);border:1px solid var(--line2);border-radius:4px;padding:1px 5px}
+.right{display:flex;align-items:center;gap:6px}
+.envpill{display:flex;align-items:center;gap:7px;height:28px;padding:0 10px;border-radius:7px;color:var(--dim);border:1px solid var(--line)}
+.dot{width:7px;height:7px;border-radius:50%}
+.ghost{height:28px;padding:0 10px;border-radius:7px;display:flex;align-items:center;gap:6px;color:var(--dim)}
+.icon{width:28px;padding:0;justify-content:center}
+.avatar{width:24px;height:24px;border-radius:50%;background:#20304A;color:#9CC3FF;display:grid;place-items:center;font-size:11px;font-weight:600;margin-left:4px}
+.body{display:grid;grid-template-columns:248px 1fr;min-height:0}
+aside{padding:4px 8px 8px 8px;display:flex;flex-direction:column;gap:1px;min-height:0}
+.nav{display:flex;align-items:center;gap:10px;height:30px;padding:0 10px;border-radius:7px;color:var(--dim)}
+.nav svg{color:var(--mute)}
+.nav.on{background:var(--raise);color:var(--text)}
+.nav.on svg{color:var(--blue)}
+.sect{display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 10px;margin-top:14px;color:var(--mute);font-size:12px}
+.filter{height:28px;margin:2px 0 4px;border-radius:7px;background:var(--raise);display:flex;align-items:center;gap:8px;padding:0 10px;color:var(--mute)}
+.row{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:7px;color:var(--dim)}
+.row .chev{width:12px;height:12px;color:var(--mute)}
+.row.on{background:var(--raise);color:var(--text)}
+.m{font:500 10.5px 'Geist Mono';width:34px;letter-spacing:.2px}
+.get{color:var(--get)}.post{color:var(--post)}.del{color:var(--del)}
+.canvas{margin:0 8px 8px 0;border:1px solid var(--line);border-radius:12px;background:var(--canvas);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.tabs-open{display:flex;align-items:center;gap:4px;height:42px;padding:0 14px;border-bottom:1px solid var(--line)}
+.otab{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-radius:7px;color:var(--dim)}
+.otab.on{background:var(--raise);color:var(--text)}
+.otab .x{color:var(--mute);width:12px;height:12px}
+.unsaved{width:6px;height:6px;border-radius:50%;background:#E5A54B}
+.head{display:flex;align-items:flex-end;gap:8px;padding:20px 24px 14px}
+.path{font-size:12px;color:var(--mute);margin-bottom:3px}
+h1{font:600 20px/1.2 Geist;letter-spacing:-.35px}
+.btn{height:28px;padding:0 11px;border-radius:7px;display:flex;align-items:center;gap:6px;border:1px solid var(--line2)}
+.btn .k{color:var(--mute);font-size:11px}
+.urlbar{display:flex;gap:8px;padding:0 24px 16px}
+.field{flex:1;height:36px;display:flex;align-items:center;border-radius:8px;background:var(--raise);border:1px solid var(--line2);overflow:hidden}
+.method{display:flex;align-items:center;gap:6px;height:100%;padding:0 10px 0 12px;font:600 12px 'Geist Mono';border-right:1px solid var(--line2)}
+.method svg{width:12px;height:12px;color:var(--mute)}
+.url{padding:0 12px;font:13px 'Geist Mono';white-space:nowrap}
+.var{color:#9CC3FF;background:rgba(61,139,255,.12);border-radius:4px;padding:1px 3px}
+.send{height:36px;padding:0 16px 0 18px;border-radius:8px;background:var(--blue);color:#fff;font-weight:500;display:flex;align-items:center;gap:10px}
+.send .k{font-size:11px;opacity:.75}
+.split{flex:1;display:grid;grid-template-columns:1fr 1px 1fr;min-height:0;border-top:1px solid var(--line)}
+.vr{background:var(--line)}
+.pane{display:flex;flex-direction:column;min-height:0;padding:10px 24px 0}
+.ptabs{display:flex;align-items:center;gap:2px;height:32px;margin-bottom:12px}
+.ptab{height:26px;padding:0 9px;border-radius:6px;display:flex;align-items:center;gap:6px;color:var(--mute)}
+.ptab.on{background:var(--raise);color:var(--text)}
+.count{font-size:11px;color:var(--mute)}
+.meta{margin-left:auto;display:flex;align-items:center;gap:12px;color:var(--mute)}
+.ok{color:var(--ok);display:flex;align-items:center;gap:6px;font-weight:500}
+table{width:100%;border-collapse:collapse}
+td,th{height:34px;border-bottom:1px solid var(--line);text-align:left;padding:0 10px;font-weight:400}
+th{color:var(--mute);font-size:12px;height:30px}
+td.mono{font:12.5px 'Geist Mono'}
+td:first-child,th:first-child{width:28px;padding:0 4px}
+.cb{width:14px;height:14px;border-radius:4px;background:var(--blue);display:grid;place-items:center}
+.cb svg{width:10px;height:10px;stroke:#fff;stroke-width:2.4}
+.cb.off{background:transparent;border:1px solid var(--line2)}
+.ph{color:var(--mute)}
+pre{font:12.5px/1.75 'Geist Mono';color:#C9C9D1;display:grid;grid-template-columns:28px 1fr;gap:0 16px}
+.ln{color:#45454C;text-align:right}
+.k{color:#9CC3FF}.s{color:#A8E6B8}.n{color:#F2C38B}.b{color:#8A8A93}
+footer{display:flex;align-items:center;gap:16px;padding:0 14px;color:var(--mute);font-size:11.5px}
+footer .sp{flex:1}
+</style></head><body>
+<header>
+  <div style="display:flex;align-items:center">
+    <div class="brand"><div class="mark"><i></i><b></b></div>Requara</div>
+    <div class="ws">Acme Payments <svg style="width:12px;height:12px"><path d="M4 6l4 4 4-4"/></svg></div>
+  </div>
+  <div class="search"><svg><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>Search requests and APIs<span class="kbd">⌘K</span></div>
+  <div class="right">
+    <div class="envpill"><span class="dot" style="background:#E5A54B"></span>Staging<svg style="width:12px;height:12px"><path d="M4 6l4 4 4-4"/></svg></div>
+    <div class="ghost icon"><svg><path d="M13 9.5A5.5 5.5 0 016.5 3a5.5 5.5 0 106.5 6.5z"/></svg></div>
+    <div class="ghost">Share</div>
+    <div class="avatar">AC</div>
+  </div>
+</header>
+<div class="body">
+  <aside>
+    <div class="nav on"><svg><path d="M2.5 8L13.5 2.5 9.5 13.5 7.5 8.5z"/></svg>Requests</div>
+    <div class="nav"><svg><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M5.5 8h5M8 5.5v5"/></svg>APIs</div>
+    <div class="nav"><svg><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>Environments</div>
+    <div class="nav"><svg><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>History</div>
+    <div class="nav"><svg><rect x="2.5" y="3" width="11" height="10" rx="2"/><path d="M5 7l1.8 1.5L5 10M8.5 10.5h2.5"/></svg>Mock servers</div>
+    <div class="nav"><svg><path d="M2.5 9.5h2.5l1.5-4 3 7 1.5-3h2.5"/></svg>Monitors</div>
+    <div class="sect">Collections<svg style="width:13px;height:13px"><path d="M8 3.5v9M3.5 8h9"/></svg></div>
+    <div class="filter"><svg style="width:13px;height:13px"><path d="M3 4h10l-4 5v3.5l-2-1V9z"/></svg>Filter</div>
+    <div class="row"><svg class="chev"><path d="M4 6l4 4 4-4"/></svg>Orders API</div>
+    <div class="row on" style="padding-left:30px"><span class="m get">GET</span>List orders</div>
+    <div class="row" style="padding-left:30px"><span class="m post">POST</span>Create order</div>
+    <div class="row" style="padding-left:30px"><span class="m get">GET</span>Retrieve order</div>
+    <div class="row" style="padding-left:30px"><span class="m del">DEL</span>Cancel order</div>
+    <div class="row"><svg class="chev"><path d="M6 4l4 4-4 4"/></svg>Payments</div>
+  </aside>
+  <main class="canvas">
+    <div class="tabs-open">
+      <div class="otab on"><span class="m get" style="width:auto">GET</span>List orders<span class="unsaved"></span><svg class="x"><path d="M4 4l8 8M12 4l-8 8"/></svg></div>
+      <div class="otab"><span class="m post" style="width:auto">POST</span>Create order</div>
+    </div>
+    <div class="head">
+      <div style="flex:1"><div class="path">Orders API</div><h1>List orders</h1></div>
+      <div class="ghost">Examples</div>
+      <div class="ghost"><svg style="width:14px;height:14px"><path d="M6 5L3 8l3 3M10 5l3 3-3 3"/></svg>Code</div>
+      <div class="btn">Save <span class="k">⌘S</span></div>
+    </div>
+    <div class="urlbar">
+      <div class="field">
+        <div class="method get">GET<svg><path d="M4 6l4 4 4-4"/></svg></div>
+        <div class="url"><span class="var">{{base_url}}</span>/v2/orders?status=open&amp;limit=20</div>
+      </div>
+      <div class="send">Send <span class="k">⌘↵</span></div>
+    </div>
+    <div class="split">
+      <section class="pane">
+        <div class="ptabs"><div class="ptab on">Params <span class="count">2</span></div><div class="ptab">Headers <span class="count">3</span></div><div class="ptab">Auth</div><div class="ptab">Body</div><div class="ptab">Scripts</div><div class="ptab">Settings</div></div>
+        <table>
+          <tr><th></th><th>Key</th><th>Value</th><th>Description</th></tr>
+          <tr><td><div class="cb"><svg><path d="M3 6.5l2.5 2.5L10 4"/></svg></div></td><td class="mono">status</td><td class="mono">open</td><td class="ph">Order state</td></tr>
+          <tr><td><div class="cb"><svg><path d="M3 6.5l2.5 2.5L10 4"/></svg></div></td><td class="mono">limit</td><td class="mono">20</td><td class="ph">Page size, 1–100</td></tr>
+          <tr><td><div class="cb off"></div></td><td class="mono ph">key</td><td class="mono ph">value</td><td></td></tr>
+        </table>
+      </section>
+      <div class="vr"></div>
+      <section class="pane">
+        <div class="ptabs"><div class="ptab on">Body</div><div class="ptab">Headers <span class="count">8</span></div><div class="ptab">Tests <span class="count" style="color:var(--ok)">2/2</span></div><div class="ptab">Timeline</div>
+          <div class="meta"><span class="ok"><span class="dot" style="background:var(--ok)"></span>200 OK</span><span>148 ms</span><span>2.4 KB</span></div></div>
+<pre><span class="ln">1</span><span class="b">{</span>
+<span class="ln">2</span><span>  <span class="k">"items"</span><span class="b">: [</span></span>
+<span class="ln">3</span><span>    <span class="b">{</span> <span class="k">"id"</span><span class="b">:</span> <span class="s">"ord_8Fk2"</span><span class="b">,</span> <span class="k">"total"</span><span class="b">:</span> <span class="n">4200</span> <span class="b">},</span></span>
+<span class="ln">4</span><span>    <span class="b">{</span> <span class="k">"id"</span><span class="b">:</span> <span class="s">"ord_8Fk3"</span><span class="b">,</span> <span class="k">"total"</span><span class="b">:</span> <span class="n">1250</span> <span class="b">}</span></span>
+<span class="ln">5</span><span>  <span class="b">],</span></span>
+<span class="ln">6</span><span>  <span class="k">"has_more"</span><span class="b">:</span> <span class="n">false</span></span>
+<span class="ln">7</span><span class="b">}</span></pre>
+      </section>
+    </div>
+  </main>
+</div>
+<footer><span>Console</span><span>Sent from server</span><span class="sp"></span><span>3 mock servers running</span></footer>
+</body></html>

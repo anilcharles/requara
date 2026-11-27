@@ -1,18 +1,35 @@
-import { InboxOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { InboxOutlined, PlusOutlined, SearchOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Divider, Form, Input, Layout, Modal, Radio, Segmented, Table, theme, Typography, Upload } from "antd";
-import { useMemo, useState } from "react";
+import { Alert, App, Button, Divider, Form, Input, Layout, Modal, Radio, Segmented, Table, theme, Typography, Upload } from "../ui/kit";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, get, post, type ApiSummary } from "../api";
+import { api, get, post, type ApiSummary, type Collection } from "../api";
 import { Dot, PageHeader } from "../components/bits";
 import { compactNumber, timeAgo } from "../lib";
 
 const statusDot: Record<string, string> = { published: "#52C41A", draft: "#BFBFBF", deprecated: "#FAAD14" };
 
+/** Opens an API: its first request in the Requests view. */
+function useOpenApi() {
+  const nav = useNavigate();
+  const qc = useQueryClient();
+  return async (id: string) => {
+    const cols = await qc.fetchQuery({ queryKey: ["collections"], queryFn: () => get<Collection[]>("/api/collections"), staleTime: 0 });
+    const first = cols.find((c) => c.id === id)?.folders.flatMap((f) => f.requests)[0];
+    nav(first ? `/requests/${first.id}` : "/requests");
+  };
+}
+
 export default function Apis() {
   const { token } = theme.useToken();
-  const nav = useNavigate();
+  const openApi = useOpenApi();
   const [params, setParams] = useSearchParams();
+  // The command palette opens an API with ?open=<id>.
+  useEffect(() => {
+    const id = params.get("open");
+    if (id) openApi(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   const [filter, setFilter] = useState<string>("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"updated" | "name" | "calls">("updated");
@@ -83,7 +100,7 @@ export default function Apis() {
         loading={list.isLoading}
         dataSource={items}
         pagination={false}
-        onRow={(a) => ({ onClick: () => nav(`/design/${a.id}`), style: { cursor: "pointer" } })}
+        onRow={(a) => ({ onClick: () => openApi(a.id), style: { cursor: "pointer" } })}
         locale={{ emptyText: q ? `No APIs match “${q}”` : "No APIs here yet" }}
         columns={[
           {
@@ -102,7 +119,7 @@ export default function Apis() {
               </div>
             ),
           },
-          { title: "Version", width: 110, render: (_, a) => <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, color: token.colorTextSecondary }}>{a.version}</span> },
+          { title: "Version", width: 110, render: (_, a) => <span style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 13, color: token.colorTextSecondary }}>{a.version}</span> },
           {
             title: "Status",
             width: 130,
@@ -139,7 +156,7 @@ export default function Apis() {
 
 function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm();
-  const nav = useNavigate();
+  const openApi = useOpenApi();
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [start, setStart] = useState("blank");
@@ -150,7 +167,7 @@ function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       qc.invalidateQueries({ queryKey: ["collections"] });
       message.success("API created");
       onClose();
-      nav(`/design/${id}`);
+      openApi(id);
     },
     onError: (e: Error) => message.error(e.message),
   });
@@ -161,10 +178,10 @@ function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) 
           <Input placeholder="Ledger API" autoFocus />
         </Form.Item>
         <Form.Item name="baseUrl" label="Base URL" rules={[{ type: "url", message: "Enter a full URL" }]}>
-          <Input placeholder="https://api.acme.dev/ledger" style={{ fontFamily: "JetBrains Mono, monospace" }} />
+          <Input placeholder="https://api.acme.dev/ledger" style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" }} />
         </Form.Item>
         <Form.Item name="version" label="Version">
-          <Input style={{ fontFamily: "JetBrains Mono, monospace" }} />
+          <Input style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace" }} />
         </Form.Item>
         <Form.Item label="Start from" style={{ marginBottom: 0 }}>
           <Radio.Group value={start} onChange={(e) => setStart(e.target.value)} optionType="button" buttonStyle="solid" style={{ display: "flex" }}>
@@ -182,7 +199,7 @@ function NewApiModal({ open, onClose }: { open: boolean; onClose: () => void }) 
 }
 
 function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const nav = useNavigate();
+  const openApi = useOpenApi();
   const qc = useQueryClient();
   const { message } = App.useApp();
   const [url, setUrl] = useState("");
@@ -204,7 +221,7 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       setFile(null);
       setUrl("");
       onClose();
-      nav(`/design/${r.id}`);
+      openApi(r.id);
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -223,11 +240,11 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         fileList={file ? [{ uid: "1", name: file.name, status: "done" }] : []}
         style={{ marginTop: 12 }}
       >
-        <p className="ant-upload-drag-icon">
+        <p className="rq-dz-icon">
           <InboxOutlined />
         </p>
-        <p className="ant-upload-text">Drop an OpenAPI 3.x or Swagger 2.0 file</p>
-        <p className="ant-upload-hint">YAML or JSON, up to 10 MB. Speklo creates the collection and docs.</p>
+        <p className="rq-dz-text">Drop an OpenAPI 3.x or Swagger 2.0 file</p>
+        <p className="rq-dz-hint">YAML or JSON, up to 10 MB. Requara creates the collection and docs.</p>
       </Upload.Dragger>
       <Divider plain style={{ fontSize: 12 }}>
         or import from a URL
@@ -237,7 +254,7 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         value={url}
         disabled={!!file}
         onChange={(e) => setUrl(e.target.value)}
-        style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13 }}
+        style={{ fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 13 }}
       />
     </Modal>
   );
