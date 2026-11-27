@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/anilcharles/requara/compare/desktop-v0.1.1...desktop-v0.1.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* **desktop:** declare the Linux packages' runtime dependencies ([#32](https://github.com/anilcharles/requara/issues/32)) ([668892b](https://github.com/anilcharles/requara/commit/668892b2094430c9cbac57f06466ec9e77f33ca0))
+
 ## [0.1.1](https://github.com/anilcharles/requara/compare/desktop-v0.1.0...desktop-v0.1.1) (2026-11-27)
 
 
