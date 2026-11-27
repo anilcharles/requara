@@ -4,6 +4,10 @@
 # One image, one Go program: it serves the API, sign-in, mock servers and the
 # web UI from the same origin. Everything that runs is memory-safe Go on a
 # distroless base (no shell, no package manager, no C web server).
+#
+# Downloaded packages and compiled Go packages go into BuildKit cache mounts.
+# A builder that keeps its state (CI's, or your own machine's) then fetches
+# and compiles only what changed. Cache mounts never end up in the image.
 
 # 1. Build the React UI. The output is plain files, so build it once on the
 #    runner's own architecture. Debian rather than Alpine: musl's resolver
@@ -12,7 +16,7 @@
 FROM --platform=$BUILDPLATFORM node:22-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY web/ .
 RUN npm run build
 
@@ -21,10 +25,11 @@ FROM --platform=$BUILDPLATFORM golang:1.26 AS api
 ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY api/go.mod api/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY api/ .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       -ldflags "-s -w -X github.com/anilcharles/requara/server/api/internal/api.Version=${VERSION}" \
       -o /out/requara ./cmd/requara
 
@@ -33,9 +38,10 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 FROM --platform=$BUILDPLATFORM golang:1.26 AS core
 WORKDIR /src
 COPY api/go.mod api/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY api/ .
-RUN mkdir -p /out/core \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    mkdir -p /out/core \
  && GOOS=js GOARCH=wasm go build -trimpath -ldflags "-s -w" -o /out/core/requara-core.wasm ./cmd/requara-wasm \
  && cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" /out/core/ \
  && gzip -9 -k /out/core/requara-core.wasm
