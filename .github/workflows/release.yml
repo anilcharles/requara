@@ -10,6 +10,7 @@ name: Release
 #
 #   server-vX.Y.Z  → ghcr.io/<owner>/<repo> image, e.g. ghcr.io/anilcharles/requara:0.1.1
 #                    (Go serves API + UI)
+#                    + Helm chart oci://ghcr.io/<owner>/charts/requara
 #                    + requara-selfhost-X.Y.Z.tar.gz (compose bundle) on the Release
 #   desktop-vX.Y.Z → installers for macOS, Windows and Linux on the Release
 #
@@ -115,6 +116,32 @@ jobs:
           build-args: VERSION=${{ needs.release-please.outputs.server_version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  # The Helm chart, versioned with the server, as an OCI artifact:
+  #   helm install requara oci://ghcr.io/<owner>/charts/requara --version X.Y.Z
+  server-chart:
+    needs: [release-please, server-images]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Package and push the chart
+        env:
+          VERSION: ${{ needs.release-please.outputs.server_version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chart=server/deploy/helm/requara
+          if [ ! -f "$chart/Chart.yaml" ]; then
+            echo "This release has no Helm chart (added after it); nothing to publish."; exit 0
+          fi
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          helm package "$chart" --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP"
+          echo "$GH_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          helm push "$RUNNER_TEMP/requara-$VERSION.tgz" "oci://ghcr.io/$owner/charts"
 
   server-bundle:
     needs: [release-please, server-images]

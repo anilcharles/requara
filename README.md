@@ -29,7 +29,17 @@ docker compose up -d
 ```
 
 Configuration and sign-in setup: [`server/deploy/README.md`](server/deploy/README.md).
-Kubernetes: [`server/deploy/kubernetes/requara.yaml`](server/deploy/kubernetes/requara.yaml).
+On Kubernetes, use the Helm chart. It's versioned with the server, and by default runs its own
+Postgres, OpenBao and S3 storage, like the Compose setup:
+
+```sh
+helm install requara oci://ghcr.io/anilcharles/charts/requara --version 0.1.2 \
+  --namespace requara --create-namespace \
+  --set url=https://requara.your-company.com --set 'admins={you@your-company.com}'
+```
+
+Settings: [`server/deploy/helm/requara/values.yaml`](server/deploy/helm/requara/values.yaml).
+The chart is published from server 0.1.2 on.
 
 ## Layout
 

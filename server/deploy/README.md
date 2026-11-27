@@ -4,7 +4,8 @@ Runs the whole server on one machine with Docker Compose: the web UI, the API,
 Postgres, OpenBao (secrets) and SeaweedFS (S3 storage). People sign in with the
 providers you enable: Google, Microsoft, GitHub, GitLab, your company's own
 SSO (any OpenID Connect or SAML 2.0 provider) or one-time email links, several
-at once if you like. For Kubernetes, see [kubernetes/](kubernetes/requara.yaml).
+at once if you like. For Kubernetes, use the Helm chart in [helm/requara](helm/requara/values.yaml)
+(published as `oci://ghcr.io/anilcharles/charts/requara`), or adapt [kubernetes/requara.yaml](kubernetes/requara.yaml).
 
 The desktop app works without a server. People connect it to this server when
 they want to collaborate, and pick one of the sign-in options you enabled.

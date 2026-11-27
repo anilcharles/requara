@@ -1,0 +1,182 @@
+{{- if .Values.bundled.enabled }}
+{{- $full := include "requara.fullname" . -}}
+{{- $b := .Values.bundled -}}
+# ---------------------------------------------------------------- Postgres
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-postgres
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres }
+  ports: [{ name: postgres, port: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-postgres
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $full }}-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: {{ $b.postgres.image }}
+          env:
+            - { name: POSTGRES_USER, value: requara }
+            - { name: POSTGRES_DB, value: requara }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: postgres-password } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports: [{ name: postgres, containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: [pg_isready, -U, requara] }
+            periodSeconds: 3
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $b.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: { requests: { storage: {{ $b.postgres.storage }} } }
+---
+# ---------------------------------------------------------------- S3 (SeaweedFS)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-s3
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: s3 }
+  ports: [{ name: s3, port: 8333 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-s3
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $full }}-s3
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: s3 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: s3 }
+    spec:
+      containers:
+        - name: s3
+          image: {{ $b.s3.image }}
+          command: [/bin/sh, -c]
+          args:
+            - |
+              printf '{"identities":[{"name":"requara","credentials":[{"accessKey":"requara","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$S3_SECRET_KEY" > /tmp/s3.json
+              exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json -master.volumeSizeLimitMB=1024
+          env:
+            - name: S3_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: s3-secret-key } }
+          ports: [{ name: s3, containerPort: 8333 }]
+          readinessProbe:
+            tcpSocket: { port: 8333 }
+            periodSeconds: 3
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $b.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: { requests: { storage: {{ $b.s3.storage }} } }
+---
+# ---------------------------------------------------------------- OpenBao
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-openbao
+  labels: {{- include "requara.labels" . | nindent 4 }}
+data:
+  config.hcl: |
+    storage "file" { path = "/openbao/data/store" }
+    listener "tcp" {
+      address     = "0.0.0.0:8200"
+      tls_disable = true # reached only inside the cluster
+    }
+    api_addr      = "http://{{ $full }}-openbao:8200"
+    disable_mlock = true
+    ui            = false
+  requara-backend.hcl: |
+{{ .Files.Get "files/requara-backend.hcl" | indent 4 }}
+  entrypoint.sh: |
+{{ .Files.Get "files/openbao-entrypoint.sh" | indent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-openbao
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: openbao }
+  ports: [{ name: http, port: 8200 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-openbao
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $full }}-openbao
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: openbao }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: openbao }
+      annotations:
+        checksum/settings: {{ printf "%v" .Values.smtp | sha256sum }}
+    spec:
+      containers:
+        - name: openbao
+          image: {{ $b.openbao.image }}
+          command: [/bin/sh, /openbao/config/entrypoint.sh]
+          securityContext: { runAsUser: 0 }
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: postgres-password } }
+            - { name: POSTGRES_HOST, value: {{ $full }}-postgres }
+            - { name: S3_ENDPOINT, value: "{{ $full }}-s3:8333" }
+            - name: S3_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: s3-secret-key } }
+            - name: ROLE_ID
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: bao-role-id } }
+            - name: SECRET_ID
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: bao-secret-id } }
+            - { name: SMTP_ADDR, value: {{ .Values.smtp.addr | quote }} }
+            - { name: SMTP_FROM, value: {{ .Values.smtp.from | quote }} }
+          ports: [{ name: http, containerPort: 8200 }]
+          readinessProbe:
+            exec: { command: [test, -f, /tmp/ready] }
+            periodSeconds: 3
+          volumeMounts:
+            - { name: config, mountPath: /openbao/config, readOnly: true }
+            - { name: data, mountPath: /openbao/data }
+      volumes:
+        - name: config
+          configMap: { name: {{ $full }}-openbao }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $b.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: { requests: { storage: {{ $b.openbao.storage }} } }
+{{- end }}

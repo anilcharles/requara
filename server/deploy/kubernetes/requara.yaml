@@ -1,4 +1,5 @@
 # Requara server on Kubernetes: an example to adapt, not a turnkey install.
+# For an install, use the Helm chart instead (../helm/requara).
 # It runs the Requara server (web UI, API, sign-in, mock servers) and expects
 # Postgres, OpenBao and S3 storage that already exist; the server reads their
 # credentials from OpenBao (secret/requara/prod/{postgres,s3,smtp,session}).
@@ -70,6 +71,8 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532   # distroless "nonroot"; a name can't be checked
+        runAsGroup: 65532
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: requara
