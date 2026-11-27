@@ -1,0 +1,79 @@
+# Requara server. Install:
+#   helm install requara oci://ghcr.io/anilcharles/charts/requara \
+#     --namespace requara --create-namespace -f my-values.yaml
+
+image:
+  repository: ghcr.io/anilcharles/requara
+  tag: ""                 # default: the chart's appVersion
+  pullPolicy: IfNotPresent
+
+# Sessions, sign-in state and jobs live in Postgres, so replicas share them.
+replicaCount: 1
+
+# The address people open. Sign-in providers redirect back to <url>/auth/callback.
+url: http://localhost:8080
+orgName: Requara
+
+auth:
+  # Comma-separated sign-in providers: google, microsoft, github, gitlab,
+  # email, or your own OIDC/SAML ids. See server/deploy/README.md.
+  providers: email
+  # Non-secret provider settings, e.g. REQUARA_AUTH_GOOGLE_CLIENT_ID.
+  env: {}
+  # A Secret whose keys become environment variables, for provider secrets
+  # such as REQUARA_AUTH_GOOGLE_CLIENT_SECRET.
+  existingSecret: ""
+
+# Instance admins (emails). Nobody becomes admin from the browser.
+admins: []
+
+# Email for sign-in links and invites.
+smtp:
+  addr: ""                # host:port
+  from: "Requara <no-reply@localhost>"
+
+# Any other REQUARA_* settings, e.g. REQUARA_ALLOWED_DOMAINS.
+extraEnv: {}
+
+# OpenBao holds Requara's settings and encrypts the secrets people store.
+# Leave addr empty to run the bundled one (see bundled below).
+openbao:
+  addr: ""                # e.g. http://openbao.vault.svc:8200
+  # A Secret with keys BAO_ROLE_ID and BAO_SECRET_ID (AppRole login).
+  existingSecret: ""
+
+# Bundled Postgres, OpenBao and S3 storage, like the Docker Compose setup.
+# Good for evaluation and small teams. For production, run them yourself (or
+# managed) and set openbao.addr; Requara reads the Postgres and S3 settings
+# from OpenBao (secret/requara/prod/{postgres,s3,smtp,session}).
+bundled:
+  enabled: true
+  storageClass: ""        # default storage class when empty
+  postgres:
+    image: postgres:17
+    storage: 5Gi
+  openbao:
+    image: openbao/openbao:2.4
+    storage: 1Gi
+  s3:
+    image: chrislusf/seaweedfs:4.03
+    storage: 10Gi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: requara.example.com
+  annotations: {}
+  tls: []                 # e.g. [{ secretName: requara-tls, hosts: [requara.example.com] }]
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 512Mi }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: requara
+description: Requara server (web UI, API, sign-in and mock servers) on Kubernetes
+type: application
+home: https://github.com/anilcharles/requara
+sources: [https://github.com/anilcharles/requara]
+# Both follow the server's version; release-please bumps them with it.
+version: 0.1.1
+appVersion: "0.1.1"

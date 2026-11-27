@@ -1,0 +1,130 @@
+{{- $full := include "requara.fullname" . -}}
+{{- if and (not .Values.bundled.enabled) (not .Values.openbao.addr) }}
+{{- fail "set openbao.addr (and openbao.existingSecret), or bundled.enabled=true" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}
+  labels: {{- include "requara.labels" . | nindent 4 }}
+data:
+  REQUARA_ENV: prod
+  REQUARA_FRONTEND_URL: {{ .Values.url | quote }}
+  REQUARA_PUBLIC_URL: {{ .Values.url | quote }}
+  REQUARA_ORG_NAME: {{ .Values.orgName | quote }}
+  REQUARA_AUTH_PROVIDERS: {{ required "auth.providers is required" .Values.auth.providers | quote }}
+  BAO_ADDR: {{ .Values.openbao.addr | default (printf "http://%s-openbao:8200" $full) | quote }}
+  REQUARA_ADMIN_EMAILS_FILE: /run/secrets/requara/admins
+  {{- range $k, $v := .Values.auth.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- range $k, $v := .Values.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "requara.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "requara.selector" . | nindent 8 }}
+      annotations:
+        # Restart when the settings change.
+        checksum/config: {{ printf "%v%v%v%v" .Values.auth .Values.extraEnv .Values.url .Values.admins | sha256sum }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532   # distroless "nonroot"; a name can't be checked
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: requara
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: {{ $full }} }
+            {{- with .Values.auth.existingSecret }}
+            - secretRef: { name: {{ . }} }
+            {{- end }}
+            {{- with .Values.openbao.existingSecret }}
+            - secretRef: { name: {{ . }} }
+            {{- end }}
+          {{- if and .Values.bundled.enabled (not .Values.openbao.existingSecret) }}
+          env:
+            - name: BAO_ROLE_ID
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: bao-role-id } }
+            - name: BAO_SECRET_ID
+              valueFrom: { secretKeyRef: { name: {{ $full }}-generated, key: bao-secret-id } }
+          {{- end }}
+          volumeMounts:
+            - { name: admins, mountPath: /run/secrets/requara, readOnly: true }
+          # OpenBao may still be starting: wait up to ~3 minutes before restarting.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: admins
+          secret:
+            secretName: {{ $full }}-admins
+            items: [{ key: admins, path: admins }]
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}
+  labels: {{- include "requara.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {{- include "requara.selector" . | nindent 4 }}
+  ports: [{ name: http, port: {{ .Values.service.port }}, targetPort: http }]
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $full }}
+  labels: {{- include "requara.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ $full }}, port: { name: http } } }
+{{- end }}

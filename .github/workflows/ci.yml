@@ -6,7 +6,8 @@ name: CI
 #    └─ Dependency vulnerabilities
 #        ├─ Server API (Go) ──┐
 #        ├─ Server web UI ────┴─ Docker image (one image: Go serves the API and the UI)
-#        └─ Desktop (macOS)
+#        ├─ Desktop (macOS)
+#        └─ Helm chart (GitHub-hosted Linux: lint, then install into a kind cluster)
 #
 # A leaked secret or a vulnerable dependency stops everything; an image is
 # only built from code whose checks passed. Jobs from pull requests
@@ -174,6 +175,67 @@ jobs:
       - name: The image build succeeded
         run: |
           [ "${{ needs.image.result }}" = success ] || { echo "Docker image job: ${{ needs.image.result }}"; exit 1; }
+
+  # The Helm chart, installed for real: build the image from this commit, start
+  # a kind cluster, install the chart with its bundled Postgres, OpenBao and
+  # S3, and check the server answers. Runs on a GitHub-hosted Linux machine
+  # (Kubernetes in Docker needs Linux), in parallel with the jobs on the Mac.
+  helm:
+    name: Helm chart
+    timeout-minutes: 30
+    needs: vulnerabilities
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: Lint
+        run: |
+          helm lint server/deploy/helm/requara
+          helm lint server/deploy/helm/requara -f server/deploy/helm/requara/ci/kind-values.yaml
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build the image from this commit
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: server
+          load: true
+          tags: requara:ci
+          cache-from: type=gha,scope=helm-ci
+          cache-to: type=gha,mode=max,scope=helm-ci
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: requara
+      - name: Install the chart
+        run: |
+          kind load docker-image requara:ci --name requara
+          kubectl create namespace requara
+          # Email sign-in needs an SMTP server: Mailpit, like in development.
+          kubectl -n requara create deployment mailpit --image=axllent/mailpit:v1.27 --port=1025
+          kubectl -n requara expose deployment mailpit --port=1025
+          helm install requara server/deploy/helm/requara -n requara \
+            -f server/deploy/helm/requara/ci/kind-values.yaml \
+            --set image.repository=requara --set image.tag=ci --set image.pullPolicy=Never \
+            --wait --timeout 10m
+      - name: The server answers
+        run: |
+          kubectl -n requara port-forward svc/requara 8080:80 > /tmp/port-forward.log 2>&1 &
+          for _ in $(seq 1 30); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 2; done
+          curl -sf http://localhost:8080/api/version | tee /tmp/version.json
+          grep -q '"name":"requara"' /tmp/version.json
+          curl -sf -o /dev/null http://localhost:8080/
+          curl -sf http://localhost:8080/auth/providers | grep -q '"id":"email"'
+      - name: OpenBao unseals itself after a restart
+        run: |
+          kubectl -n requara delete pod requara-openbao-0 --wait=true
+          kubectl -n requara wait --for=condition=Ready pod/requara-openbao-0 --timeout=180s
+          kubectl -n requara rollout restart deployment/requara
+          kubectl -n requara rollout status deployment/requara --timeout=180s
+      - name: What went wrong
+        if: failure()
+        run: |
+          kubectl -n requara get pods -o wide || true
+          kubectl -n requara describe pods | tail -n 80 || true
+          for p in $(kubectl -n requara get pods -o name); do echo "== $p"; kubectl -n requara logs "$p" --tail=40 || true; done
 
   # The runner is a Mac, so CI builds the macOS desktop app. Windows and Linux
   # installers are built at release time (release.yml).

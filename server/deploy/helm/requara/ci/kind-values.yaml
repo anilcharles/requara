@@ -1,0 +1,12 @@
+# Values for the CI install test in a kind cluster: email sign-in through a
+# Mailpit next to it, and small volumes.
+url: http://localhost:8080
+admins: [admin@example.com]
+smtp:
+  addr: mailpit:1025
+extraEnv:
+  REQUARA_ALLOW_PRIVATE_NETWORK: "true"
+bundled:
+  postgres: { storage: 1Gi }
+  openbao: { storage: 256Mi }
+  s3: { storage: 1Gi }

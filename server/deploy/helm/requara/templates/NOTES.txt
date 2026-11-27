@@ -1,0 +1,14 @@
+Requara {{ .Chart.AppVersion }} is starting.
+
+{{- if .Values.ingress.enabled }}
+Open {{ .Values.url }} (ingress host {{ .Values.ingress.host }}).
+{{- else }}
+Try it locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "requara.fullname" . }} 8080:{{ .Values.service.port }}
+and open {{ .Values.url }}.
+{{- end }}
+
+Sign-in providers: {{ .Values.auth.providers }}. Each provider redirects to {{ .Values.url }}/auth/callback.
+{{- if not .Values.admins }}
+No admins set: add emails under `admins` to manage users, workspaces and the audit log.
+{{- end }}
