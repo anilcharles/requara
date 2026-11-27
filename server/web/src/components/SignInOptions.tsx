@@ -46,7 +46,7 @@ const MARKS: Record<string, { bg: string; text: string }> = {
 };
 
 function ProviderMark({ p }: { p: Provider }) {
-  const m = (p.product && MARKS[p.product]) || { bg: "#4F46E5", text: p.name.trim()[0]?.toUpperCase() ?? "?" };
+  const m = (p.product && MARKS[p.product]) || { bg: "#3D8BFF", text: p.name.trim()[0]?.toUpperCase() ?? "?" };
   return (
     <span
       aria-hidden

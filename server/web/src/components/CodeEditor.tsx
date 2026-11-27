@@ -50,9 +50,17 @@ function defineThemes() {
       { token: "number", foreground: "FFC069" },
       { token: "keyword.json", foreground: "FF85C0" },
       { token: "string", foreground: "95DE64" },
-      { token: "keyword", foreground: "FF85C0" },
+      { token: "keyword", foreground: "5CD6C0" },
     ],
-    colors: { "editor.background": "#161618", "editorGutter.background": "#161618", "editorLineNumber.foreground": "#4A4A52" }, // the page's own charcoal
+    // The canvas's own charcoal; brackets in calm tones, no pink.
+    colors: {
+      "editor.background": "#161618",
+      "editorGutter.background": "#161618",
+      "editorLineNumber.foreground": "#4A4A52",
+      "editorBracketHighlight.foreground1": "#C9C9D1",
+      "editorBracketHighlight.foreground2": "#7AB0FF",
+      "editorBracketHighlight.foreground3": "#9ADBC4",
+    },
   });
 }
 

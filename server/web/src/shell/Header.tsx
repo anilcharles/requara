@@ -20,7 +20,7 @@ export function Logo({ size = 22 }: { size?: number }) {
       <g transform="translate(32 32) scale(0.68) translate(-32 -32)">
         <circle cx="32" cy="32" r="18" fill="none" stroke="#fff" strokeWidth="5.5" />
         <circle cx="44.7" cy="19.3" r="9" fill="#14161F" />
-        <circle cx="44.7" cy="19.3" r="5.5" fill="#4F46E5" />
+        <circle cx="44.7" cy="19.3" r="5.5" fill="#3D8BFF" />
       </g>
     </svg>
   );

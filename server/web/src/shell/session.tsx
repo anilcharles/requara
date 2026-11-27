@@ -77,7 +77,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
         theme={{
           algorithm: algorithms,
           token: {
-            colorPrimary: "#7C7FF7", // Requara indigo, from the logo
+            colorPrimary: "#3D8BFF", // Requara blue (also the logo's dot)
             borderRadius: 6,
             fontSize: 13,
             controlHeight: 30,
@@ -85,7 +85,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
             fontFamilyCode: "\'Geist Mono Variable\', ui-monospace, Menlo, monospace",
             // One calm charcoal family instead of black and grey patches.
             ...(isDark
-              ? { colorBgLayout: DARK.page, colorBgContainer: DARK.panel, colorBgElevated: "#1E1E21", colorBorder: "#2E2E33", colorBorderSecondary: "#232327", colorSplit: "#232327", colorText: "#EDEDEF", colorTextSecondary: "#A0A0A8", colorTextTertiary: "#6F6F78", colorFillTertiary: "rgba(255,255,255,0.05)", colorLink: "#A5A6F6", controlItemBgActive: "#1F1F23", controlItemBgActiveHover: "#232327" }
+              ? { colorBgLayout: DARK.page, colorBgContainer: DARK.panel, colorBgElevated: "#1E1E21", colorBorder: "#2E2E33", colorBorderSecondary: "#232327", colorSplit: "#232327", colorText: "#EDEDEF", colorTextSecondary: "#A0A0A8", colorTextTertiary: "#6F6F78", colorFillTertiary: "rgba(255,255,255,0.05)", colorLink: "#7AB0FF", controlItemBgActive: "#1F1F23", controlItemBgActiveHover: "#232327" }
               : {}),
           },
           components: {
