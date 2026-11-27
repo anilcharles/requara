@@ -38,6 +38,7 @@ strip = true
 # .dmg/.app on macOS, NSIS .exe on Windows, .deb and AppImage on Linux.
 [package.metadata.packager]
 product-name = "Requara"
+authors = ["Requara"] # the .deb Maintainer field
 identifier = "dev.requara.desktop"
 category = "DeveloperTool"
 description = "The Requara desktop app for your company's Requara server"
@@ -52,3 +53,21 @@ icons = [
   "assets/icons/icon.icns",
   "assets/icons/icon.ico",
 ]
+
+# Linux packages must pull in what the app needs at run time. Linked: xcb and
+# xkbcommon. Loaded at start: the Vulkan loader and a Vulkan driver (GPUI draws
+# with Vulkan), fontconfig and at least one font. Without these the app won't
+# start on a clean system (checked on a bare Ubuntu 22.04 container).
+[package.metadata.packager.deb]
+depends = [
+  "libxcb1",
+  "libxkbcommon0",
+  "libxkbcommon-x11-0",
+  "libvulkan1",
+  "mesa-vulkan-drivers | vulkan-icd",
+  "fontconfig",
+  "fonts-dejavu-core | fonts-noto-core | fonts-liberation",
+]
+
+[package.metadata.packager.pacman]
+depends = ["libxcb", "libxkbcommon", "libxkbcommon-x11", "vulkan-icd-loader", "vulkan-driver", "fontconfig", "ttf-font"]
