@@ -137,22 +137,24 @@ jobs:
       # cache mounts (npm packages, Go modules, compiled Go packages) survive
       # between runs, so a build only fetches and compiles what changed.
       # "use: false" leaves the machine's own default builder alone.
-      # To start clean: docker buildx rm requara
+      # To start clean: docker buildx rm requara-ci
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
-          name: requara
+          # The config below is applied only when the builder is created, so
+          # rename the builder whenever the config changes.
+          name: requara-ci
           use: false
           cleanup: false
-          # Applied when the builder is first created. BuildKit drops the
-          # oldest cache beyond 10 GB, and keeps 15 GB free in the VM.
+          # BuildKit drops the oldest cache beyond 10 GB. No free-space
+          # target: the Docker VM is shared, and a target above its free
+          # space makes BuildKit delete the whole cache after every build.
           buildkitd-config-inline: |
             [worker.oci]
               gc = true
               maxUsedSpace = "10GB"
-              minFreeSpace = "15GB"
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          builder: requara
+          builder: requara-ci
           context: server
           push: false
 
