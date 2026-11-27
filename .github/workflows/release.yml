@@ -11,9 +11,19 @@ name: Release
 #   server-vX.Y.Z  → ghcr.io/<owner>/<repo>/server image (Go serves API + UI)
 #                    + requara-selfhost-X.Y.Z.tar.gz (compose bundle) on the Release
 #   desktop-vX.Y.Z → installers for macOS, Windows and Linux on the Release
+#
+# To rebuild and re-attach an existing release (e.g. after a failed build),
+# run this workflow by hand with that release's tag:
+#   gh workflow run release.yml -f tag=server-v0.1.1
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release to rebuild, e.g. server-v0.1.1 or desktop-v0.1.1
+        required: true
+        type: string
 
 # Least privilege: nothing by default, each job asks for what it needs.
 permissions: {}
@@ -25,19 +35,37 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      server: ${{ steps.rp.outputs['server--release_created'] }}
-      server_tag: ${{ steps.rp.outputs['server--tag_name'] }}
-      server_version: ${{ steps.rp.outputs['server--version'] }}
-      desktop: ${{ steps.rp.outputs['desktop--release_created'] }}
-      desktop_tag: ${{ steps.rp.outputs['desktop--tag_name'] }}
+      server: ${{ steps.rp.outputs['server--release_created'] || steps.manual.outputs.server }}
+      server_tag: ${{ steps.rp.outputs['server--tag_name'] || steps.manual.outputs.server_tag }}
+      server_version: ${{ steps.rp.outputs['server--version'] || steps.manual.outputs.server_version }}
+      desktop: ${{ steps.rp.outputs['desktop--release_created'] || steps.manual.outputs.desktop }}
+      desktop_tag: ${{ steps.rp.outputs['desktop--tag_name'] || steps.manual.outputs.desktop_tag }}
     steps:
       - id: rp
+        if: github.event_name == 'push'
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      # Run by hand: rebuild the release named by the tag, which must exist.
+      - id: manual
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ ! "$TAG" =~ ^(server|desktop)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::tag must look like server-v1.2.3 or desktop-v1.2.3"; exit 1
+          fi
+          product="${BASH_REMATCH[1]}" version="${BASH_REMATCH[2]}"
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null
+          {
+            echo "$product=true"
+            echo "${product}_tag=$TAG"
+            echo "${product}_version=$version"
+          } >> "$GITHUB_OUTPUT"
 
-  # ---------- server: two images, one version ----------
+  # ---------- server: the image (amd64 + arm64), then the self-host bundle ----------
   server-images:
     needs: release-please
     if: needs.release-please.outputs.server == 'true'
@@ -49,7 +77,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { ref: "${{ needs.release-please.outputs.server_tag }}" }
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      # The same persistent builder as CI (see ci.yml), so a release reuses its
+      # cache instead of compiling everything in a new builder.
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          name: requara-ci
+          use: false
+          cleanup: false
+          buildkitd-config-inline: |
+            [worker.oci]
+              gc = true
+              maxUsedSpace = "10GB"
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -69,14 +107,13 @@ jobs:
             org.opencontainers.image.title=Requara server
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
+          builder: requara-ci
           context: server
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: VERSION=${{ needs.release-please.outputs.server_version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
 
   server-bundle:
     needs: [release-please, server-images]
@@ -142,7 +179,10 @@ jobs:
       # the matching cargo-packager settings before shipping to customers.
       # Unsigned builds work but show "unidentified developer" warnings.
       - run: cargo packager --release
+      # Files only: on macOS target/packages also holds the Requara.app
+      # folder next to the .dmg, and a folder can't be uploaded.
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ needs.release-please.outputs.desktop_tag }}" target/packages/* --clobber
+          TAG: ${{ needs.release-please.outputs.desktop_tag }}
+        run: find target/packages -maxdepth 1 -type f -print0 | xargs -0 gh release upload "$TAG" --clobber
