@@ -6,8 +6,10 @@
 # distroless base (no shell, no package manager, no C web server).
 
 # 1. Build the React UI. The output is plain files, so build it once on the
-#    runner's own architecture.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+#    runner's own architecture. Debian rather than Alpine: musl's resolver
+#    gives up (EAI_AGAIN) behind some VM DNS forwarders, such as colima's on
+#    the self-hosted runner, and npm ci then crashes.
+FROM --platform=$BUILDPLATFORM node:22-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
