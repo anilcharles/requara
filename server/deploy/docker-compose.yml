@@ -15,7 +15,7 @@ services:
   # The Requara server: one Go program serving the web UI, the API, sign-in
   # and mock servers on one address.
   requara:
-    image: ${REQUARA_IMAGE_PREFIX:-ghcr.io/OWNER/REPO}/server:${REQUARA_VERSION:-latest}
+    image: ${REQUARA_IMAGE:-ghcr.io/OWNER/REPO}:${REQUARA_VERSION:-latest}
     restart: unless-stopped
     ports: ["${REQUARA_PORT:-8080}:8080"]
     # Sign-in providers (REQUARA_AUTH_*) and access settings come from .env,

@@ -6,8 +6,30 @@ Design, mock and test APIs with your team. Requara ships as two products from th
 
 | Product | What it is | Where it's released |
 |---|---|---|
-| **Server** | One Go program serving the API and the React web UI. Companies self-host it with Docker. | Image `ghcr.io/<owner>/<repo>/server`, plus a compose bundle on each `server-vX.Y.Z` GitHub Release |
-| **Desktop** | A native GPUI app. Works on its own as a local API client; signing in to a team's server (Google, GitHub, Microsoft, company SSO, …) adds collaboration. | Installers on each `desktop-vX.Y.Z` GitHub Release |
+| **Server** | One Go program serving the API and the React web UI. Companies self-host it with Docker. | Docker image [`ghcr.io/anilcharles/requara`](https://github.com/anilcharles/requara/pkgs/container/requara), plus a Docker Compose bundle on each `server-vX.Y.Z` [release](https://github.com/anilcharles/requara/releases) |
+| **Desktop** | A native GPUI app. Works on its own as a local API client; signing in to a team's server (Google, GitHub, Microsoft, company SSO, …) adds collaboration. | Installers for macOS, Windows and Linux on each `desktop-vX.Y.Z` [release](https://github.com/anilcharles/requara/releases) |
+
+## Run the server
+
+The server is one Docker image:
+
+```sh
+docker pull ghcr.io/anilcharles/requara:0.1.1   # or :latest
+```
+
+It needs Postgres, OpenBao (secrets) and S3 storage next to it. The Docker Compose
+setup in [`server/deploy/docker-compose.yml`](server/deploy/docker-compose.yml) starts
+all of them, wired together. Each server release attaches it as
+`requara-selfhost-X.Y.Z.tar.gz`, with the version already pinned:
+
+```sh
+tar xzf requara-selfhost-0.1.1.tar.gz && cd requara
+cp .env.example .env    # your URL, sign-in providers, admins
+docker compose up -d
+```
+
+Configuration and sign-in setup: [`server/deploy/README.md`](server/deploy/README.md).
+Kubernetes: [`server/deploy/kubernetes/requara.yaml`](server/deploy/kubernetes/requara.yaml).
 
 ## Layout
 

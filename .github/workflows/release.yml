@@ -8,7 +8,8 @@ name: Release
 # product (server, desktop). Merging one creates that product's tag and
 # GitHub Release, and the jobs below build and attach what it ships:
 #
-#   server-vX.Y.Z  → ghcr.io/<owner>/<repo>/server image (Go serves API + UI)
+#   server-vX.Y.Z  → ghcr.io/<owner>/<repo> image, e.g. ghcr.io/anilcharles/requara:0.1.1
+#                    (Go serves API + UI)
 #                    + requara-selfhost-X.Y.Z.tar.gz (compose bundle) on the Release
 #   desktop-vX.Y.Z → installers for macOS, Windows and Linux on the Release
 #
@@ -94,7 +95,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: name
-        run: echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')/server" >> "$GITHUB_OUTPUT"
+        run: echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
@@ -127,10 +128,14 @@ jobs:
         env:
           VERSION: ${{ needs.release-please.outputs.server_version }}
         run: |
-          prefix="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           out="$RUNNER_TEMP/bundle" && rm -rf "$out" && mkdir -p "$out"
           cp -R server/deploy "$out/requara"
-          perl -pi -e "s#ghcr.io/OWNER/REPO#${prefix}#g" "$out/requara/docker-compose.yml"
+          # Point the bundle at the published image. Older tags still name it
+          # .../server, so rewrite the requara service's image line whole.
+          IMAGE="$image" perl -pi -e 's#^(\s*image:\s*)\$\{REQUARA_IMAGE[^}]*\}\S*$#$1\$\{REQUARA_IMAGE:-$ENV{IMAGE}\}:\$\{REQUARA_VERSION:-latest\}#' "$out/requara/docker-compose.yml"
+          IMAGE="$image" perl -pi -e 's#ghcr\.io/OWNER/REPO(/server)?#$ENV{IMAGE}#g' "$out/requara/kubernetes/requara.yaml"
+          grep -q "REQUARA_IMAGE:-$image}:" "$out/requara/docker-compose.yml" || { echo "::error::image line not rewritten"; exit 1; }
           perl -pi -e "s#^REQUARA_VERSION=.*#REQUARA_VERSION=${VERSION}#" "$out/requara/.env.example"
           tar czf "server/requara-selfhost-${VERSION}.tar.gz" -C "$out" requara
       - name: Attach to the release
