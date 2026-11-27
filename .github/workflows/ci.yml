@@ -17,6 +17,9 @@ name: CI
 # downloaded or built is cached on it: Go modules and build cache, npm
 # packages, the Docker builder's layers, the desktop build. GitHub's cache is
 # not used; every job would have to download it and upload it again.
+#
+# Each job keeps the Mac awake while it runs (GitHub fails a job whose runner
+# sleeps) and has a time limit, so a hung job can't hold the only runner.
 on:
   pull_request:
   push:
@@ -32,9 +35,12 @@ permissions:
 jobs:
   secrets:
     name: Secret scan
+    timeout-minutes: 10
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     steps:
+      - name: Keep the Mac awake during this job
+        run: caffeinate -i -t 3600 >/dev/null 2>&1 &
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
       - name: gitleaks (settings in .gitleaks.toml)
@@ -55,10 +61,13 @@ jobs:
 
   vulnerabilities:
     name: Dependency vulnerabilities
+    timeout-minutes: 15
     needs: secrets
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     steps:
+      - name: Keep the Mac awake during this job
+        run: caffeinate -i -t 3600 >/dev/null 2>&1 &
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -80,11 +89,14 @@ jobs:
 
   api:
     name: Server API (Go)
+    timeout-minutes: 20
     needs: vulnerabilities
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/api } }
     steps:
+      - name: Keep the Mac awake during this job
+        run: caffeinate -i -t 3600 >/dev/null 2>&1 &
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -96,11 +108,14 @@ jobs:
 
   web:
     name: Server web UI (React)
+    timeout-minutes: 15
     needs: vulnerabilities
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: server/web } }
     steps:
+      - name: Keep the Mac awake during this job
+        run: caffeinate -i -t 3600 >/dev/null 2>&1 &
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -110,10 +125,13 @@ jobs:
 
   image:
     name: Docker image
+    timeout-minutes: 30
     needs: [api, web]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     steps:
+      - name: Keep the Mac awake during this job
+        run: caffeinate -i -t 3600 >/dev/null 2>&1 &
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # One builder that stays on the runner. Its layers and the Dockerfile's
       # cache mounts (npm packages, Go modules, compiled Go packages) survive
@@ -125,6 +143,13 @@ jobs:
           name: requara
           use: false
           cleanup: false
+          # Applied when the builder is first created. BuildKit drops the
+          # oldest cache beyond 10 GB, and keeps 15 GB free in the VM.
+          buildkitd-config-inline: |
+            [worker.oci]
+              gc = true
+              maxUsedSpace = "10GB"
+              minFreeSpace = "15GB"
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           builder: requara
@@ -136,6 +161,7 @@ jobs:
   # unless it succeeded. Remove them once the rule requires "Docker image".
   image-required:
     name: Docker image (${{ matrix.part }})
+    timeout-minutes: 5
     needs: image
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: [self-hosted, speklo]
@@ -151,11 +177,14 @@ jobs:
   # installers are built at release time (release.yml).
   desktop:
     name: Desktop (macOS)
+    timeout-minutes: 30
     needs: vulnerabilities
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, speklo]
     defaults: { run: { working-directory: desktop } }
     steps:
+      - name: Keep the Mac awake during this job
+        run: caffeinate -i -t 3600 >/dev/null 2>&1 &
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Cargo's build folder lives in the runner's tool folder: checkout empties the
       # workspace (target/ included) before every job, and from there only what
