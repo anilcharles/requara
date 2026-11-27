@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2](https://github.com/anilcharles/requara/compare/server-v0.1.1...server-v0.1.2) (2026-11-27)
+
+
+### Features
+
+* **server:** Helm chart, installed into a kind cluster in CI and published with each release ([#35](https://github.com/anilcharles/requara/issues/35)) ([7762d33](https://github.com/anilcharles/requara/commit/7762d33a8ed80583268bbdf5a28c7cb5d2df922d))
+
+
+### Bug Fixes
+
+* **server:** publish the image as ghcr.io/anilcharles/requara, document it in the README ([#33](https://github.com/anilcharles/requara/issues/33)) ([d52c73a](https://github.com/anilcharles/requara/commit/d52c73a9dc136ca34ff9d59241267a51241c7fc1))
+
 ## [0.1.1](https://github.com/anilcharles/requara/compare/server-v0.1.0...server-v0.1.1) (2026-11-27)
 
 
