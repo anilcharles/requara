@@ -1,6 +1,6 @@
 import { Check, ChevronDown, Monitor, Moon, Plus, Search, Sun } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Input, Modal, Typography } from "antd";
+import { App, Input, Modal, Typography } from "../ui/kit";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get, isSignedIn, post, selectWorkspace, serverApi } from "../api";

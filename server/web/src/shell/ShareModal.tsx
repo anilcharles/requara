@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Avatar, Button, Input, Modal, Select, Space, Tag, theme, Typography } from "antd";
+import { App, Avatar, Button, Input, Modal, Select, Space, Tag, theme, Typography } from "../ui/kit";
 import { useState } from "react";
 import { del, get, patch, post, type Member } from "../api";
 import { initials } from "./Header";

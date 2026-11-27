@@ -1,4 +1,4 @@
-import { App } from "antd";
+import { App } from "../../ui/kit";
 import { Check, Copy, Loader2, MoreHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { SendResult } from "../../api";

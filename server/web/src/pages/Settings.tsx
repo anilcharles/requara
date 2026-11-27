@@ -1,6 +1,6 @@
-import { ExportOutlined, KeyOutlined, LeftOutlined, SlidersOutlined, UserOutlined } from "@ant-design/icons";
+import { ExportOutlined, KeyOutlined, LeftOutlined, SlidersOutlined, UserOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Avatar, Button, Card, Checkbox, Descriptions, Form, Input, InputNumber, Layout, Modal, Segmented, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
+import { Alert, App, Avatar, Button, Card, Checkbox, Descriptions, Form, Input, InputNumber, Layout, Modal, Segmented, Select, Space, Switch, Table, Tag, theme, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useState, type ReactNode } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
@@ -169,7 +169,7 @@ function Preferences() {
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <Card title="Appearance" {...card}>
           <Row label="Theme">
-            <Segmented value={prefs.theme ?? "system"} onChange={(v) => setPrefs({ theme: v as "light" })} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "System" }]} />
+            <Segmented value={prefs.theme ?? "dark"} onChange={(v) => setPrefs({ theme: v as "light" })} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "System" }]} />
           </Row>
           <Row label="Density" desc="Compact fits more rows in tables and the sidebar.">
             <Segmented value={prefs.density ?? "comfortable"} onChange={(v) => setPrefs({ density: v as "compact" })} options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} />
@@ -247,7 +247,7 @@ function AgentCard({ card }: { card: object }) {
   };
   return (
     <Card title="Local agent" {...card}>
-      <Typography.Paragraph type="secondary" style={{ margin: "12px 0" }}>
+      <Typography.Paragraph type="secondary" style={{ margin: "12px 24px" }}>
         In My workspace, requests are sent by this browser, so APIs that don't allow other websites (CORS), cookies and some headers don't work. Run <Typography.Text code>requara-agent</Typography.Text> on your
         computer and paste the token it prints: Requara then sends My workspace's requests through it. Team workspaces send from your organization's server and don't need it.
       </Typography.Paragraph>

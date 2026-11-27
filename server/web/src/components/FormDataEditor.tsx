@@ -1,5 +1,5 @@
-import { DeleteOutlined, PaperClipOutlined } from "@ant-design/icons";
-import { App, Button, Checkbox, Input, Select, theme, Upload } from "antd";
+import { DeleteOutlined, PaperClipOutlined } from "../ui/icons";
+import { App, Button, Checkbox, Input, Select, theme, Upload } from "../ui/kit";
 import type { FileData, FormField } from "../api";
 import { bytes } from "../lib";
 import { mono } from "./bits";

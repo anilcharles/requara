@@ -1,6 +1,6 @@
-import { DeleteOutlined, LockOutlined } from "@ant-design/icons";
+import { DeleteOutlined, LockOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Card, Checkbox, Input, Modal, Select, Space, Spin, Tag, theme, Typography } from "antd";
+import { Alert, App, Button, Card, Checkbox, Input, Modal, Select, Space, Spin, Tag, theme, Typography } from "../ui/kit";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { get, post, put, type Variable } from "../api";

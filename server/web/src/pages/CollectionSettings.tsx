@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Input, Layout, Segmented, Space, Spin, Tabs, theme, Typography } from "antd";
+import { App, Button, Input, Layout, Segmented, Space, Spin, Tabs, theme, Typography } from "../ui/kit";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { get, put, type CollectionSettings as Settings } from "../api";

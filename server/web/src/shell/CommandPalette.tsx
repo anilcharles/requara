@@ -1,6 +1,6 @@
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "../ui/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Input, Modal, theme, Typography, type InputRef } from "antd";
+import { Input, Modal, theme, Typography, type InputRef } from "../ui/kit";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { get } from "../api";

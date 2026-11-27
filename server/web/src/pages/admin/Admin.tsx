@@ -7,9 +7,9 @@ import {
   LeftOutlined,
   SettingOutlined,
   TeamOutlined,
-} from "@ant-design/icons";
+} from "../../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Input, Layout, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, theme, Typography } from "antd";
+import { Alert, App, Button, Card, Col, Descriptions, Empty, Form, Input, Layout, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, theme, Typography } from "../../ui/kit";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";

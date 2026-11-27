@@ -1,6 +1,6 @@
-import { DownloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined } from "../../ui/icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Button, DatePicker, Input, Select, Space, Table, Tag, Tooltip, Typography } from "../../ui/kit";
 import dayjs, { type Dayjs } from "dayjs";
 import { useMemo, useState } from "react";
 import { get, type AuditEvent } from "../../api";

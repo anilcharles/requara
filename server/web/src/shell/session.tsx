@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App as AntApp, ConfigProvider, theme } from "antd";
+import { App as AntApp } from "../ui/kit";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { get, patch, personalActive, type Environment, type Me, type Prefs } from "../api";
 import { warmCore } from "../personal/core";
@@ -33,10 +33,6 @@ function useSystemDark() {
 }
 
 // Applies the signed-in user's theme and density to Ant Design.
-// Dark surfaces: the window chrome (header, rail, sidebar) a step darker than
-// the page, and panels on top, like Postman's dark theme.
-// Near-black window frame; the work canvas one step lighter.
-const DARK = { chrome: "#0B0B0C", page: "#0B0B0C", panel: "#131315" }; // = --rq-frame / --rq-canvas
 
 export function PrefsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -63,41 +59,16 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     onSuccess: (saved) => qc.setQueryData<Me>(["me"], (m) => (m ? { ...m, prefs: saved } : m)),
   });
 
-  const algorithms = [isDark ? theme.darkAlgorithm : theme.defaultAlgorithm];
-  if (prefs.density === "compact") algorithms.push(theme.compactAlgorithm);
-
   useEffect(() => {
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
     document.documentElement.dataset.theme = isDark ? "dark" : "light"; // src/ui colours
-    document.body.style.background = isDark ? DARK.page : "#F5F5F5";
-  }, [isDark]);
+    document.body.style.background = ""; // ui.css paints it from --rq-frame
+    document.documentElement.dataset.density = prefs.density === "compact" ? "compact" : "comfortable";
+  }, [isDark, prefs.density]);
 
   return (
     <Ctx.Provider value={{ prefs, isDark, setPrefs: (p) => save.mutate(p) }}>
-      <ConfigProvider
-        theme={{
-          algorithm: algorithms,
-          token: {
-            colorPrimary: "#3D8BFF", // Requara blue (also the logo's dot)
-            borderRadius: 6,
-            fontSize: 13,
-            controlHeight: 30,
-            fontFamily: "'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-            fontFamilyCode: "\'Geist Mono Variable\', ui-monospace, Menlo, monospace",
-            // One calm charcoal family instead of black and grey patches.
-            ...(isDark
-              ? { colorBgLayout: DARK.page, colorBgContainer: DARK.panel, colorBgElevated: "#1C1C1F", colorBorder: "#2C2C30", colorBorderSecondary: "#232326", colorSplit: "#232326", colorText: "#EDEDEF", colorTextSecondary: "#A1A1A9", colorTextTertiary: "#6B6B74", colorFillTertiary: "rgba(255,255,255,0.05)", colorLink: "#7AB0FF", controlItemBgActive: "#1A1A1D", controlItemBgActiveHover: "#1E1E21" }
-              : {}),
-          },
-          components: {
-            Layout: { headerBg: isDark ? DARK.chrome : "#FFFFFF", siderBg: isDark ? DARK.chrome : "#FFFFFF", bodyBg: isDark ? DARK.page : "#F5F5F5", headerHeight: 48, headerPadding: "0 12px" },
-            Tabs: { horizontalItemPadding: "10px 0", horizontalItemGutter: 24, titleFontSize: 13 },
-            Button: { fontWeight: 500 },
-          },
-        }}
-      >
-        <AntApp>{children}</AntApp>
-      </ConfigProvider>
+      <AntApp>{children}</AntApp>
     </Ctx.Provider>
   );
 }

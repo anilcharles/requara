@@ -1,6 +1,6 @@
-import { DeleteOutlined } from "@ant-design/icons";
+import { DeleteOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Empty, Modal, Popconfirm, Table, Typography } from "antd";
+import { Button, Empty, Modal, Popconfirm, Table, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { del, get, personalActive, type Cookie } from "../api";
 import { mono } from "../components/bits";

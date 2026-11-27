@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Breadcrumb, Button, Input, InputNumber, Layout, Space, Spin, Switch, theme, Typography } from "antd";
+import { Alert, App, Breadcrumb, Button, Input, InputNumber, Layout, Space, Spin, Switch, theme, Typography } from "../../ui/kit";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { api, get, personalActive, post, put, type Field, type OperationDetail, type RequestDoc, type SendResult } from "../../api";

@@ -1,6 +1,6 @@
-import { SettingOutlined } from "@ant-design/icons";
+import { SettingOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
+import { App, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, theme, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 import { get, mocksPath, subscribeMockCalls, patch, post, type ApiSummary, type Mock, type MockCall } from "../api";

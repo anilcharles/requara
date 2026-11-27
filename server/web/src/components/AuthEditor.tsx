@@ -1,4 +1,4 @@
-import { Button, Input, Segmented, Select, Space, Typography, message } from "antd";
+import { Button, Input, Segmented, Select, Space, Typography, message } from "../ui/kit";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Auth } from "../api";
 import { mono } from "./bits";

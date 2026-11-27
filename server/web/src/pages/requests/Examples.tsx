@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dropdown, Modal, theme, Typography } from "antd";
+import { Button, Dropdown, Modal, theme, Typography } from "../../ui/kit";
 import { useState } from "react";
 import { del, get, type Example } from "../../api";
 import { mono, StatusTag } from "../../components/bits";

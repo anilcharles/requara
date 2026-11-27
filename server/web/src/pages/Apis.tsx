@@ -1,6 +1,6 @@
-import { InboxOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { InboxOutlined, PlusOutlined, SearchOutlined } from "../ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Divider, Form, Input, Layout, Modal, Radio, Segmented, Table, theme, Typography, Upload } from "antd";
+import { Alert, App, Button, Divider, Form, Input, Layout, Modal, Radio, Segmented, Table, theme, Typography, Upload } from "../ui/kit";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, get, post, type ApiSummary, type Collection } from "../api";
@@ -240,11 +240,11 @@ function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         fileList={file ? [{ uid: "1", name: file.name, status: "done" }] : []}
         style={{ marginTop: 12 }}
       >
-        <p className="ant-upload-drag-icon">
+        <p className="rq-dz-icon">
           <InboxOutlined />
         </p>
-        <p className="ant-upload-text">Drop an OpenAPI 3.x or Swagger 2.0 file</p>
-        <p className="ant-upload-hint">YAML or JSON, up to 10 MB. Requara creates the collection and docs.</p>
+        <p className="rq-dz-text">Drop an OpenAPI 3.x or Swagger 2.0 file</p>
+        <p className="rq-dz-hint">YAML or JSON, up to 10 MB. Requara creates the collection and docs.</p>
       </Upload.Dragger>
       <Divider plain style={{ fontSize: 12 }}>
         or import from a URL

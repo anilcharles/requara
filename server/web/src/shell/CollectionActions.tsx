@@ -1,6 +1,6 @@
-import { InboxOutlined } from "@ant-design/icons";
+import { InboxOutlined } from "../ui/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Input, Modal, Segmented, Typography, Upload } from "antd";
+import { Alert, App, Input, Modal, Segmented, Typography, Upload } from "../ui/kit";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { del, patch, personalActive, post, type Collection, type RequestDoc } from "../api";
@@ -161,11 +161,11 @@ export function ImportModal({ open, onClose, collectionId }: { open: boolean; on
               return false;
             }}
           >
-            <p className="ant-upload-drag-icon">
+            <p className="rq-dz-icon">
               <InboxOutlined />
             </p>
-            <p className="ant-upload-text">{zip ? zip.name : "Drop a Postman collection (v2.0 or v2.1) or a Requara files .zip here, or click to choose it"}</p>
-            <p className="ant-upload-hint">In Postman: ··· on the collection → Export → Collection v2.1. A Git folder from Export as files: zip it first.</p>
+            <p className="rq-dz-text">{zip ? zip.name : "Drop a Postman collection (v2.0 or v2.1) or a Requara files .zip here, or click to choose it"}</p>
+            <p className="rq-dz-hint">In Postman: ··· on the collection → Export → Collection v2.1. A Git folder from Export as files: zip it first.</p>
           </Upload.Dragger>
           <Input.TextArea rows={5} style={{ marginTop: 12, fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace", fontSize: 12 }} placeholder="…or paste the collection JSON" value={text} onChange={(e) => setText(e.target.value)} />
         </>

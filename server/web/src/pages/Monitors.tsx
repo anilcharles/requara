@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Drawer, Empty, Form, Input, Layout, Modal, Popconfirm, Select, Space, Switch, Table, Tag, theme, Typography } from "antd";
+import { Alert, App, Button, Drawer, Empty, Form, Input, Layout, Modal, Popconfirm, Select, Space, Switch, Table, Tag, theme, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { del, get, isSignedIn, patch, personalActive, post, type Monitor, type MonitorRun } from "../api";

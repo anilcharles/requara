@@ -1,5 +1,5 @@
-import { CaretDownOutlined, CaretRightOutlined, ClearOutlined, CloseOutlined, CodeOutlined, SearchOutlined } from "@ant-design/icons";
-import { Badge, Button, Empty, Input, Segmented, Tabs, theme, Tooltip, Typography } from "antd";
+import { CaretDownOutlined, CaretRightOutlined, ClearOutlined, CloseOutlined, CodeOutlined, SearchOutlined } from "../ui/icons";
+import { Badge, Button, Empty, Input, Segmented, Tabs, theme, Tooltip, Typography } from "../ui/kit";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { KV } from "../api";

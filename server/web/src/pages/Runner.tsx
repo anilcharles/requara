@@ -1,5 +1,5 @@
-import { CheckCircleFilled, CloseCircleFilled, InboxOutlined, WarningFilled } from "@ant-design/icons";
-import { Alert, Button, Card, Checkbox, Col, Empty, InputNumber, Layout, Progress, Row, Select, Space, Statistic, Tag, theme, Typography, Upload } from "antd";
+import { CheckCircleFilled, CloseCircleFilled, InboxOutlined, WarningFilled } from "../ui/icons";
+import { Alert, Button, Card, Checkbox, Col, Empty, InputNumber, Layout, Progress, Row, Select, Space, Statistic, Tag, theme, Typography, Upload } from "../ui/kit";
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type SendResult } from "../api";

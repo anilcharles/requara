@@ -5,7 +5,7 @@ import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
 import CssWorker from "monaco-editor/language/css/css.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
-import { theme } from "antd";
+import { theme } from "../ui/kit";
 import { useEffect, useRef, useState } from "react";
 import { usePrefs } from "../shell/session";
 

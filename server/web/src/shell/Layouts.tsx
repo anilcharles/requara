@@ -1,6 +1,6 @@
 import { Activity, Boxes, ChevronDown, ChevronRight, Cookie, Filter, History, MoreHorizontal, Plus, Send, SlidersHorizontal, SquareTerminal } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button as AntButton, Layout, Result, Spin } from "antd";
+import { Alert, Button as AntButton, Layout, Result, Spin } from "../ui/kit";
 import { Button, Menu, TextInput, type MenuItem } from "../ui";
 import { methodColor } from "../lib";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";

@@ -1,4 +1,4 @@
-import { theme, Typography } from "antd";
+import { theme, Typography } from "../ui/kit";
 import type { CSSProperties, ReactNode } from "react";
 import { methodColor, shortMethod, statusTone } from "../lib";
 

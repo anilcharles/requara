@@ -1,4 +1,4 @@
-import { Card, theme, Typography } from "antd";
+import { Card, theme, Typography } from "../ui/kit";
 import { useSearchParams } from "react-router-dom";
 import SignInOptions, { useProviders } from "../components/SignInOptions";
 import { Logo } from "../shell/Header";

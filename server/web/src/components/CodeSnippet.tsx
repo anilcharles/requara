@@ -1,5 +1,5 @@
-import { CopyOutlined } from "@ant-design/icons";
-import { App, Button, Modal, Segmented, theme } from "antd";
+import { CopyOutlined } from "../ui/icons";
+import { App, Button, Modal, Segmented, theme } from "../ui/kit";
 import { useMemo, useState } from "react";
 import type { RequestDoc } from "../api";
 import CodeEditor from "./CodeEditor";

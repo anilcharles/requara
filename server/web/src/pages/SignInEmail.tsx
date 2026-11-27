@@ -1,5 +1,5 @@
-import { MailOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Input, Result, Skeleton, theme, Typography } from "antd";
+import { MailOutlined } from "../ui/icons";
+import { Alert, Button, Card, Input, Result, Skeleton, theme, Typography } from "../ui/kit";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Logo } from "../shell/Header";

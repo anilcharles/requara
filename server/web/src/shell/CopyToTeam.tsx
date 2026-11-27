@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Alert, App, Checkbox, Modal, Progress, Select, Space, Typography } from "antd";
+import { Alert, App, Checkbox, Modal, Progress, Select, Space, Typography } from "../ui/kit";
 import { useEffect, useState } from "react";
 import { isSignedIn, serverApi } from "../api";
 import { snapshot } from "../personal/backend";

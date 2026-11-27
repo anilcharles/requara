@@ -1,6 +1,6 @@
-import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, InfoCircleOutlined } from "../../ui/icons";
 import { useQuery } from "@tanstack/react-query";
-import { App, Button, Empty, Input, Space, Tag, theme, Typography } from "antd";
+import { App, Button, Empty, Input, Space, Tag, theme, Typography } from "../../ui/kit";
 import dayjs from "dayjs";
 import { useEffect, useRef, useState } from "react";
 import { get, type RequestDoc, type Variable, type WsMessage } from "../../api";

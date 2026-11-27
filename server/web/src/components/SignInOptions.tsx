@@ -1,4 +1,4 @@
-import { Alert, Button, Modal, Skeleton, Typography } from "antd";
+import { Alert, Button, Modal, Skeleton, Typography } from "../ui/kit";
 import { useEffect, useState } from "react";
 
 export type Provider = { id: string; name: string; type: string; product?: string; productName?: string };

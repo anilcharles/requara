@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Avatar, Button, Descriptions, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, theme, Tooltip, Typography } from "antd";
+import { Alert, App, Avatar, Button, Descriptions, Drawer, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, theme, Tooltip, Typography } from "../../ui/kit";
 import { useState } from "react";
 import { del, get, post, type AdminInvite, type AdminUser, type AdminUserDetail, type AdminWorkspace } from "../../api";
 import { PageHeader } from "../../components/bits";
