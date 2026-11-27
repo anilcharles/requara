@@ -12,6 +12,11 @@ name: CI
 # only built from code whose checks passed. Jobs from pull requests
 # opened from forks are skipped, so outside code never runs on that machine.
 # (Fork PR workflows are also disabled in the repository's Actions settings.)
+#
+# The runner is one machine that keeps its disk between runs, so whatever is
+# downloaded or built is cached on it: Go modules and build cache, npm
+# packages, the Docker builder's layers, the desktop build. GitHub's cache is
+# not used; every job would have to download it and upload it again.
 on:
   pull_request:
   push:
@@ -34,12 +39,19 @@ jobs:
         with: { fetch-depth: 0 }
       - name: gitleaks (settings in .gitleaks.toml)
         run: |
-          case "$(uname -s)-$(uname -m)" in
-            Darwin-arm64) asset=darwin_arm64 ;; Darwin-x86_64) asset=darwin_x64 ;;
-            Linux-aarch64) asset=linux_arm64 ;; *) asset=linux_x64 ;;
-          esac
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_${asset}.tar.gz" | tar xz -C "$RUNNER_TEMP" gitleaks
-          "$RUNNER_TEMP/gitleaks" git --redact -v
+          # Kept in the runner's tool folder, so it is downloaded once per version.
+          version=8.30.1
+          dir="$RUNNER_TOOL_CACHE/gitleaks/$version"
+          if [ ! -x "$dir/gitleaks" ]; then
+            case "$(uname -s)-$(uname -m)" in
+              Darwin-arm64) asset=darwin_arm64 ;; Darwin-x86_64) asset=darwin_x64 ;;
+              Linux-aarch64) asset=linux_arm64 ;; *) asset=linux_x64 ;;
+            esac
+            curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_${asset}.tar.gz" | tar xz -C "$RUNNER_TEMP" gitleaks
+            mkdir -p "$dir"
+            mv "$RUNNER_TEMP/gitleaks" "$dir/gitleaks"
+          fi
+          "$dir/gitleaks" git --redact -v
 
   vulnerabilities:
     name: Dependency vulnerabilities
@@ -51,7 +63,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: server/api/go.mod
-          cache-dependency-path: server/api/go.sum
+          cache: false # modules and the build cache are already on the runner's disk
       - name: Go (govulncheck)
         working-directory: server/api
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
@@ -77,7 +89,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: server/api/go.mod
-          cache-dependency-path: server/api/go.sum
+          cache: false # modules and the build cache are already on the runner's disk
       - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
       - run: go test ./...
@@ -92,9 +104,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: server/web/package-lock.json
+          node-version: 22 # no cache input: npm's download cache is already on the runner's disk
       - run: npm ci --no-audit --no-fund
       - run: npm run build # type-checks, then bundles
 
@@ -105,13 +115,21 @@ jobs:
     runs-on: [self-hosted, speklo]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # One builder that stays on the runner. Its layers and the Dockerfile's
+      # cache mounts (npm packages, Go modules, compiled Go packages) survive
+      # between runs, so a build only fetches and compiles what changed.
+      # "use: false" leaves the machine's own default builder alone.
+      # To start clean: docker buildx rm requara
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          name: requara
+          use: false
+          cleanup: false
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
+          builder: requara
           context: server
           push: false
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
 
   # The rules for main still require the two image checks from before the
   # server became one image. These report them from the single build and fail
@@ -139,9 +157,14 @@ jobs:
     defaults: { run: { working-directory: desktop } }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # No rust-cache here: on a self-hosted runner its cleanup deletes the machine's
-      # own programs from ~/.cargo/bin. The build folder persists between runs anyway.
+      # Cargo's build folder lives in the runner's tool folder: checkout empties the
+      # workspace (target/ included) before every job, and from there only what
+      # changed is recompiled.
+      # No rust-cache: on a self-hosted runner its cleanup deletes the machine's own
+      # programs from ~/.cargo/bin.
       # Uses the runner's installed Rust (rustup); no toolchain changes on the machine.
+      - name: Keep the build folder between runs
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TOOL_CACHE/requara-desktop-target" >> "$GITHUB_ENV"
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
