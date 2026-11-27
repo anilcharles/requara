@@ -52,7 +52,7 @@ require (
 	github.com/dop251/goja_nodejs v0.0.0-20260918173711-b481721df8a2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/evanw/esbuild v0.28.2 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-openapi/jsonpointer v1.0.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
