@@ -113,6 +113,22 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
 
+  # The rules for main still require the two image checks from before the
+  # server became one image. These report them from the single build and fail
+  # unless it succeeded. Remove them once the rule requires "Docker image".
+  image-required:
+    name: Docker image (${{ matrix.part }})
+    needs: image
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, speklo]
+    strategy:
+      matrix:
+        part: [api, web]
+    steps:
+      - name: The image build succeeded
+        run: |
+          [ "${{ needs.image.result }}" = success ] || { echo "Docker image job: ${{ needs.image.result }}"; exit 1; }
+
   # The runner is a Mac, so CI builds the macOS desktop app. Windows and Linux
   # installers are built at release time (release.yml).
   desktop:
