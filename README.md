@@ -1,5 +1,7 @@
 # Requara
 
+![Requara's request page: a GET sent to httpbin.org/json, with the request on the left and the JSON response on the right](docs/screenshot.png)
+
 Design, mock and test APIs with your team. Requara ships as two products from this repo:
 
 | Product | What it is | Where it's released |
@@ -17,6 +19,7 @@ server/
   version.txt Server version (managed by release-please)
 desktop/      GPUI desktop app (Rust)
 branding/     Logo SVGs and icongen, which renders every app icon from them
+docs/         README screenshot
 dev/          Local development only: docker-compose for Postgres, Keycloak (local test IdP), S3, Mailpit, scripts
 .github/      CI, PR-title check, releases
 ```
