@@ -1,4 +1,4 @@
-# Requara server → ghcr.io/<owner>/<repo>/server:<version>
+# Requara server → ghcr.io/<owner>/<repo>:<version>, e.g. ghcr.io/anilcharles/requara:0.1.1
 # Build context: server/
 #
 # One image, one Go program: it serves the API, sign-in, mock servers and the

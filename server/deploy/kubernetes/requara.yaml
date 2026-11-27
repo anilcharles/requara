@@ -73,7 +73,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: requara
-          image: ghcr.io/OWNER/REPO/server:latest   # pin a release
+          image: ghcr.io/OWNER/REPO:latest   # pin a release, e.g. ghcr.io/anilcharles/requara:0.1.1
           ports: [{ name: http, containerPort: 8080 }]
           envFrom:
             - configMapRef: { name: requara }
